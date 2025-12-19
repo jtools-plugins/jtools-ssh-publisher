@@ -1,7 +1,9 @@
 package com.lhstack.ssh.view
 
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.terminal.JBTerminalWidget
 import com.intellij.ui.components.JBScrollBar
 import com.jediterm.terminal.Questioner
 import com.jediterm.terminal.TtyConnector
@@ -29,8 +31,9 @@ import javax.swing.SwingUtilities
  * SSH终端面板 - 使用JediTerm
  */
 class SshTerminalPanel(
-    parentDisposable: Disposable,
-    private val config: SshConfig
+    val parentDisposable: Disposable,
+    private val config: SshConfig,
+    val project: Project
 ) : JPanel(BorderLayout()), Disposable {
 
     private val connectionManager = SshConnectionManager()
@@ -75,7 +78,7 @@ class SshTerminalPanel(
 
                 SwingUtilities.invokeLater {
                     try {
-                        termWidget = object: JediTermWidget(JBTerminalSystemSettingsProvider()){
+                        termWidget = object: JBTerminalWidget(project,JBTerminalSystemSettingsProvider(),parentDisposable){
                             override fun createScrollBar(): JScrollBar {
                                 return JBScrollBar()
                             }
