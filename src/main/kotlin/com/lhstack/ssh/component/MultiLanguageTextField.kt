@@ -11,11 +11,17 @@ import com.intellij.psi.PsiDocumentManager
 import com.intellij.ui.LanguageTextField
 
 class MultiLanguageTextField(
-    private val languageFileType: LanguageFileType,
+    private var languageFileType: LanguageFileType,
     project: Project,
     value: String,
-    private val isLineNumbersShown: Boolean = true
-) : LanguageTextField(languageFileType.language, project, value, false), Disposable {
+    private val isLineNumbersShown: Boolean = true,
+    val viewer: Boolean = false,
+    val editorListener: (EditorEx) -> Unit = {}
+) :
+    LanguageTextField(languageFileType.language, project, value, false), Disposable {
+
+    private val documentCreator = SimpleDocumentCreator()
+
 
     init {
         border = null
@@ -27,23 +33,29 @@ class MultiLanguageTextField(
 
     override fun createEditor(): EditorEx {
         val editorEx = EditorFactory.getInstance()
-            .createEditor(document, project, languageFileType, false) as EditorEx
+            .createEditor(document, project, languageFileType, this.viewer) as EditorEx
         editorEx.highlighter = HighlighterFactory.createHighlighter(project, languageFileType)
-        
-        PsiDocumentManager.getInstance(project).getPsiFile(editorEx.document)?.let { psiFile ->
+        val psiFile = PsiDocumentManager.getInstance(project).getPsiFile(
+            editorEx.document
+        )
+        if (psiFile != null) {
             DaemonCodeAnalyzer.getInstance(project).setHighlightingEnabled(psiFile, true)
+//            if(psiFile is PsiJavaFile){
+//                DaemonCodeAnalyzer.getInstance(project).setImportHintsEnabled(psiFile,true)
+//            }else if(psiFile is GroovyFile){
+//                DaemonCodeAnalyzer.getInstance(project).setImportHintsEnabled(psiFile,true)
+//            }
         }
-        
         editorEx.setBorder(null)
-        editorEx.settings.apply {
-            additionalLinesCount = 0
-            additionalColumnsCount = 1
-            isLineNumbersShown = this@MultiLanguageTextField.isLineNumbersShown
-            isUseSoftWraps = true
-            lineCursorWidth = 1
-            isLineMarkerAreaShown = false
-            setRightMargin(-1)
-        }
+        val settings = editorEx.settings
+        settings.additionalLinesCount = 0
+        settings.additionalColumnsCount = 1
+        settings.isLineNumbersShown = isLineNumbersShown
+        settings.isUseSoftWraps = true
+        settings.lineCursorWidth = 1
+        settings.isLineMarkerAreaShown = false
+        settings.setRightMargin(-1)
+        editorListener.invoke(editorEx)
         return editorEx
     }
 }

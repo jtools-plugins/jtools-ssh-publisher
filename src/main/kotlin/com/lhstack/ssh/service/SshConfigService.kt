@@ -12,7 +12,7 @@ import java.sql.DriverManager
 object SshConfigService {
 
     private val dbPath: String by lazy {
-        val dir = File(System.getProperty("user.home"), ".ssh-publisher")
+        val dir = File(System.getProperty("user.home"), ".jtools/jtools-ssh-publisher")
         if (!dir.exists()) dir.mkdirs()
         File(dir, "db.data").absolutePath
     }

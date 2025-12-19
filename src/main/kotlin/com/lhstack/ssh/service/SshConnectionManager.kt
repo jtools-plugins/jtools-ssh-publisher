@@ -20,7 +20,9 @@ import java.util.concurrent.TimeUnit
  */
 class SshConnectionManager {
     
-    private val client: SshClient = SshClient.setUpDefaultClient().apply { start() }
+    private val client: SshClient = SshClient.setUpDefaultClient().apply {
+        start()
+    }
     private var session: ClientSession? = null
     private var sftpClient: SftpClient? = null
     
@@ -37,6 +39,7 @@ class SshConnectionManager {
                 .verify(30, TimeUnit.SECONDS)
                 .session
             
+            // 在session级别配置心跳保活（认证后生效）
             println("[SSH] 连接建立，正在认证...")
             
             when (config.authType) {
@@ -54,6 +57,18 @@ class SshConnectionManager {
             session?.auth()?.verify(30, TimeUnit.SECONDS)
             val authenticated = session?.isAuthenticated == true
             println("[SSH] 认证结果: $authenticated")
+            
+            // 认证成功后配置心跳保活
+            if (authenticated) {
+                try {
+                    org.apache.sshd.core.CoreModuleProperties.HEARTBEAT_INTERVAL.set(session, java.time.Duration.ofSeconds(30))
+                    org.apache.sshd.core.CoreModuleProperties.HEARTBEAT_NO_REPLY_MAX.set(session, 3)
+                    println("[SSH] 心跳保活已配置")
+                } catch (e: Exception) {
+                    println("[SSH] 心跳配置失败（不影响连接）: ${e.message}")
+                }
+            }
+            
             authenticated
         } catch (e: Exception) {
             println("[SSH] 连接错误: ${e.message}")

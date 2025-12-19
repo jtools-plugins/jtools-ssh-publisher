@@ -383,7 +383,8 @@ class ScriptEditDialog(
             shellFileType,
             project,
             existingScript?.content ?: "#!/bin/bash\n",
-            isLineNumbersShown = true
+            isLineNumbersShown = true,
+            viewer = false
         )
         Disposer.register(disposable, contentEditor)
 
