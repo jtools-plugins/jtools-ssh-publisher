@@ -15,7 +15,6 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.treeStructure.Tree
 import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.service.SshConfigService
-import com.lhstack.tools.plugins.Logger
 import java.awt.BorderLayout
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
@@ -25,9 +24,7 @@ import javax.swing.tree.DefaultTreeModel
 
 class MainView(
     private val parentDisposable: Disposable,
-    val project: Project,
-    private val logger: Logger,
-    private val runnable: Runnable
+    val project: Project
 ) : SimpleToolWindowPanel(true), Disposable {
 
     private lateinit var tree: Tree

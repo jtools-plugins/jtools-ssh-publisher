@@ -1,6 +1,6 @@
-# JTools SSH Publisher
+# SSH Publisher
 
-一个用于 JTools 的 SSH 客户端插件，支持 SSH 连接管理、终端操作和文件上传功能。
+IntelliJ IDEA 插件，提供 SSH 连接管理、终端操作和文件上传功能。
 
 ## 功能特性
 
@@ -13,7 +13,7 @@
 ### SSH 终端
 - 基于 JediTerm 的终端模拟器
 - 自动适配 IDEA 主题颜色
-- 支持常用快捷键（Ctrl+C/V、Tab 等）
+- 支持常用快捷键
 - 多终端标签页管理
 
 ### 文件上传 (SFTP)
@@ -29,29 +29,35 @@
 
 配置数据使用 SQLite 存储，路径：
 ```
-~/.jtools/jtools-ssh-publisher/db.data
+~/.ssh-publisher/db.data
 ```
 
-## 依赖
+## 安装
 
-- Apache MINA SSHD (SSH/SFTP 客户端)
-- SQLite JDBC (数据存储)
-- JediTerm (终端模拟)
-- IntelliJ Terminal Plugin
+1. 从 JetBrains Marketplace 安装
+2. 或下载 zip 包手动安装
 
 ## 构建
 
 ```bash
-./gradlew shadowJar
+./gradlew buildPlugin
 ```
+
+构建产物位于 `build/distributions/` 目录。
 
 ## 使用说明
 
-1. 点击工具栏"新建配置"添加 SSH 连接
-2. 填写主机、端口、用户名等信息
-3. 选择认证方式（密码/密钥）
-4. 可选配置前置/后置脚本
-5. 双击配置打开终端，右键菜单可上传文件
+1. 打开右侧工具栏 "SSH Publisher"
+2. 点击工具栏"新建配置"添加 SSH 连接
+3. 填写主机、端口、用户名等信息
+4. 选择认证方式（密码/密钥）
+5. 可选配置前置/后置脚本
+6. 双击配置打开终端，右键菜单可上传文件
+
+## 兼容性
+
+- IntelliJ IDEA 2022.3+
+- 需要 Terminal 插件
 
 ## License
 

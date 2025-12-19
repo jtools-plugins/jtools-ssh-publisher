@@ -1,0 +1,41 @@
+<idea-plugin>
+    <id>com.lhstack.ssh-publisher</id>
+    <name>SSH Publisher</name>
+    <version>1.0.0</version>
+    <vendor email="support@example.com" url="https://github.com/lhstack">lhstack</vendor>
+
+    <description><![CDATA[
+    SSH客户端插件，支持SSH连接管理、终端操作和文件上传功能。
+    <br/><br/>
+    <b>功能特性：</b>
+    <ul>
+        <li>SSH连接管理（密码/密钥认证）</li>
+        <li>SSH终端（适配IDEA主题）</li>
+        <li>SFTP文件上传</li>
+        <li>前置/后置脚本支持</li>
+    </ul>
+    ]]></description>
+
+    <change-notes><![CDATA[
+    <b>1.0.0</b>
+    <ul>
+        <li>初始版本</li>
+        <li>SSH连接管理</li>
+        <li>终端功能</li>
+        <li>文件上传</li>
+    </ul>
+    ]]></change-notes>
+
+    <idea-version since-build="223" until-build="253.*"/>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.plugins.terminal</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="SSH Publisher"
+                    secondary="true"
+                    anchor="right"
+                    icon="/pluginTabIcon.svg"
+                    factoryClass="com.lhstack.ssh.SshToolWindowFactory"/>
+    </extensions>
+</idea-plugin>
