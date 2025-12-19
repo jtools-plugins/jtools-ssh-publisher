@@ -1,7 +1,9 @@
 package com.lhstack.ssh.view
 
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.terminal.JBTerminalWidget
 import com.intellij.ui.components.JBScrollBar
 import com.jediterm.terminal.Questioner
 import com.jediterm.terminal.TtyConnector
@@ -11,31 +13,29 @@ import com.lhstack.ssh.service.SshConnectionManager
 import org.apache.sshd.client.channel.ChannelShell
 import org.apache.sshd.client.channel.ClientChannelEvent
 import org.jetbrains.plugins.terminal.JBTerminalSystemSettingsProvider
+
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.io.InputStream
-import java.io.InputStreamReader
 import java.io.OutputStream
-import java.nio.charset.StandardCharsets
 import java.util.*
 import java.util.concurrent.TimeUnit
-import javax.swing.JLabel
-import javax.swing.JPanel
-import javax.swing.JScrollBar
-import javax.swing.SwingConstants
-import javax.swing.SwingUtilities
+import javax.swing.*
 
 /**
  * SSH终端面板 - 使用JediTerm
  */
 class SshTerminalPanel(
-    parentDisposable: Disposable,
-    private val config: SshConfig
+    val parentDisposable: Disposable,
+    private val config: SshConfig,
+    val project: Project
 ) : JPanel(BorderLayout()), Disposable {
 
     private val connectionManager = SshConnectionManager()
     private var shellChannel: ChannelShell? = null
     private var termWidget: JediTermWidget? = null
+
+    private var label = JLabel("正在连接 ${config.username}@${config.host}:${config.port}...", SwingConstants.CENTER)
 
     @Volatile
     private var running = true
@@ -47,7 +47,7 @@ class SshTerminalPanel(
     }
 
     private fun showConnecting() {
-        add(JLabel("正在连接 ${config.username}@${config.host}:${config.port}...", SwingConstants.CENTER), BorderLayout.CENTER)
+        add(label, BorderLayout.CENTER)
     }
 
     private fun connect() {
@@ -75,7 +75,7 @@ class SshTerminalPanel(
 
                 SwingUtilities.invokeLater {
                     try {
-                        termWidget = object: JediTermWidget(JBTerminalSystemSettingsProvider()){
+                        termWidget = object : JBTerminalWidget(project, JBTerminalSystemSettingsProvider(),parentDisposable) {
                             override fun createScrollBar(): JScrollBar {
                                 return JBScrollBar()
                             }
@@ -95,6 +95,7 @@ class SshTerminalPanel(
                     }
                 }
             } catch (e: Exception) {
+                label.text = "连接错误: ${e.message}"
                 showError("连接错误: ${e.message}")
                 e.printStackTrace()
             }
@@ -133,7 +134,8 @@ class SshTerminalPanel(
         private val channel: ChannelShell
     ) : TtyConnector {
 
-        private val reader = InputStreamReader(inputStream, StandardCharsets.UTF_8)
+        // 使用StreamDecoder处理UTF-8，能正确处理不完整的多字节序列
+        private val reader = inputStream.bufferedReader(Charsets.UTF_8)
 
         override fun init(questioner: Questioner?): Boolean = true
 
@@ -147,7 +149,7 @@ class SshTerminalPanel(
         }
 
         override fun write(string: String) {
-            write(string.toByteArray(StandardCharsets.UTF_8))
+            write(string.toByteArray(Charsets.UTF_8))
         }
 
         override fun isConnected(): Boolean = running && channel.isOpen
@@ -157,13 +159,20 @@ class SshTerminalPanel(
         }
 
         override fun ready(): Boolean {
-            return try { inputStream.available() > 0 } catch (_: Exception) { false }
+            return try { 
+                reader.ready()
+            } catch (_: Exception) { 
+                false 
+            }
         }
 
         override fun getName(): String = "${config.username}@${config.host}"
 
         override fun close() {
-            try { channel.close() } catch (_: Exception) {}
+            try { 
+                reader.close()
+                channel.close() 
+            } catch (_: Exception) {}
         }
     }
 }

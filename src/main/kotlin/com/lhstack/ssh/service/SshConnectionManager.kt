@@ -140,9 +140,12 @@ class SshConnectionManager {
         return try {
             println("[SSH] 正在创建Shell通道...")
             currentSession.createShellChannel().apply {
-                setPtyType("xterm-256color")
-                setPtyColumns(120)
-                setPtyLines(40)
+                ptyType = "xterm-256color"
+                ptyColumns = 120
+                ptyLines = 40
+                // 设置UTF-8编码环境变量
+                setEnv("LANG", "en_US.UTF-8")
+                setEnv("LC_ALL", "en_US.UTF-8")
                 println("[SSH] Shell通道创建成功")
             }
         } catch (e: Exception) {

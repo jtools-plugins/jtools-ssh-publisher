@@ -134,7 +134,7 @@ class MainView(
     }
 
     private fun openTerminal(config: SshConfig) {
-        val terminalPanel = SshTerminalPanel(parentDisposable, config)
+        val terminalPanel = SshTerminalPanel(parentDisposable, config,project)
         val tabIndex = terminalTabs.tabCount
         terminalTabs.insertTab(config.name, AllIcons.Debugger.Console, terminalPanel, config.host, tabIndex)
         terminalTabs.selectedIndex = tabIndex
