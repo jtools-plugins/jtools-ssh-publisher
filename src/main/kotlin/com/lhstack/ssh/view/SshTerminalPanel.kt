@@ -136,7 +136,7 @@ class SshTerminalPanel(
         private val channel: ChannelShell
     ) : TtyConnector {
 
-        private val reader = InputStreamReader(inputStream, StandardCharsets.UTF_8)
+        private val reader = inputStream.bufferedReader(Charsets.UTF_8)
 
         override fun init(questioner: Questioner?): Boolean = true
 
@@ -150,7 +150,7 @@ class SshTerminalPanel(
         }
 
         override fun write(string: String) {
-            write(string.toByteArray(StandardCharsets.UTF_8))
+            write(string.toByteArray(Charsets.UTF_8))
         }
 
         override fun isConnected(): Boolean = running && channel.isOpen
@@ -160,13 +160,20 @@ class SshTerminalPanel(
         }
 
         override fun ready(): Boolean {
-            return try { inputStream.available() > 0 } catch (_: Exception) { false }
+            return try {
+                reader.ready()
+            } catch (_: Exception) {
+                false
+            }
         }
 
         override fun getName(): String = "${config.username}@${config.host}"
 
         override fun close() {
-            try { channel.close() } catch (_: Exception) {}
+            try {
+                reader.close()
+                channel.close()
+            } catch (_: Exception) {}
         }
     }
 }
