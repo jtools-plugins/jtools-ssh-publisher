@@ -36,17 +36,46 @@ class MainView(
 
     private val terminalTabs = com.intellij.ui.components.JBTabbedPane(JTabbedPane.TOP)
     private val splitPane = JBSplitter(true, 0.4f)
+    
+    // 左侧面板Tab（SSH列表 + 上传管理）
+    private val leftTabs = com.intellij.ui.components.JBTabbedPane(JTabbedPane.TOP)
+    
+    // 上传管理面板
+    private lateinit var uploadProgressPanel: UploadProgressPanel
 
     init {
         Disposer.register(parentDisposable, this)
         initTree()
+        initUploadPanel()
         initActionToolbar()
         initSplitPane()
         refreshTree()
     }
+    
+    private fun initUploadPanel() {
+        uploadProgressPanel = UploadProgressPanel(project)
+        Disposer.register(parentDisposable, uploadProgressPanel)
+        
+        // 监听上传任务变化，自动显示上传管理Tab
+        com.lhstack.ssh.service.UploadManager.getInstance().addListener(object : com.lhstack.ssh.service.UploadManager.UploadListener {
+            override fun onTaskAdded(task: com.lhstack.ssh.model.UploadTask) {
+                // 有新任务时自动切换到上传管理Tab
+                javax.swing.SwingUtilities.invokeLater {
+                    leftTabs.selectedIndex = 1
+                }
+            }
+            override fun onTaskUpdated(task: com.lhstack.ssh.model.UploadTask) {}
+            override fun onTaskRemoved(task: com.lhstack.ssh.model.UploadTask) {}
+            override fun onLogMessage(taskId: String, message: String) {}
+        })
+    }
 
     private fun initSplitPane() {
-        splitPane.firstComponent = JBScrollPane(tree)
+        // 左侧Tab：SSH列表 + 上传管理
+        leftTabs.addTab("SSH连接", AllIcons.Nodes.Plugin, JBScrollPane(tree))
+        leftTabs.addTab("上传管理", AllIcons.Actions.Upload, uploadProgressPanel)
+        
+        splitPane.firstComponent = leftTabs
         splitPane.secondComponent = terminalTabs
         setContent(splitPane)
     }
@@ -175,7 +204,7 @@ class MainView(
     }
 
     private fun openUploadDialog(config: SshConfig) {
-        UploadDialog(project, config).show()
+        MultiUploadDialog(project, config).show()
     }
 
     private fun editConfig(config: SshConfig) {
@@ -270,5 +299,7 @@ class MainView(
                 Disposer.dispose(component)
             }
         }
+        // 关闭上传管理器
+        com.lhstack.ssh.service.UploadManager.getInstance().shutdown()
     }
 }
