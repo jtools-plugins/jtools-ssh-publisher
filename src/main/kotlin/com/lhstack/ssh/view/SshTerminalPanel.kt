@@ -264,6 +264,7 @@ class SshTerminalPanel(
                 if (!connectionManager.isConnected() || shellChannel?.isOpen != true) {
                     showDisconnected()
                 }
+                shellChannel?.session?.sendIgnoreMessage(0)
             } catch (e: Exception) {
                 showDisconnected()
             }

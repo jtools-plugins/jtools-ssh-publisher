@@ -160,7 +160,6 @@ class SshConnectionManager {
                 ptyLines = 40
                 // 设置UTF-8编码环境变量
                 setEnv("LANG", "en_US.UTF-8")
-                setEnv("LC_ALL", "en_US.UTF-8")
                 println("[SSH] Shell通道创建成功")
             }
         } catch (e: Exception) {
