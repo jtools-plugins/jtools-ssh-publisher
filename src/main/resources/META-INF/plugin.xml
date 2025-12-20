@@ -1,36 +1,37 @@
 <idea-plugin>
     <id>com.lhstack.ssh-publisher</id>
-    <name>SSH Publisher</name>
+    <name>JTools SSH Publisher</name>
     <version>1.1.0</version>
     <vendor email="support@example.com" url="https://github.com/lhstack">lhstack</vendor>
 
     <description><![CDATA[
+    <p>A powerful SSH client plugin for IntelliJ IDEA, supporting SSH connection management, terminal operations, and parallel multi-file uploads.</p>
     <p>功能强大的 SSH 客户端插件，支持 SSH 连接管理、终端操作和多文件并行上传功能。</p>
     
-    <h3>SSH 连接管理</h3>
+    <h3>SSH Connection Management / SSH 连接管理</h3>
     <ul>
-        <li>支持密码和密钥两种认证方式</li>
-        <li>配置分组管理，清晰组织多个服务器</li>
-        <li>连接测试功能，快速验证配置</li>
-        <li>心跳保活机制，防止连接超时断开</li>
-        <li>断线自动检测，支持一键重连</li>
+        <li>Password and private key authentication / 支持密码和密钥两种认证方式</li>
+        <li>Group-based configuration management / 配置分组管理，清晰组织多个服务器</li>
+        <li>Connection testing / 连接测试功能，快速验证配置</li>
+        <li>Heartbeat keep-alive mechanism / 心跳保活机制，防止连接超时断开</li>
+        <li>Auto-reconnect on disconnect / 断线自动检测，支持一键重连</li>
     </ul>
     
-    <h3>SSH 终端</h3>
+    <h3>SSH Terminal / SSH 终端</h3>
     <ul>
-        <li>基于 JediTerm 的专业终端模拟器</li>
-        <li>自动适配 IDEA 主题颜色</li>
-        <li>多终端标签页管理</li>
-        <li>UTF-8 编码支持</li>
+        <li>JediTerm-based terminal emulator / 基于 JediTerm 的专业终端模拟器</li>
+        <li>Auto-adapts to IDEA theme colors / 自动适配 IDEA 主题颜色</li>
+        <li>Multi-tab terminal management / 多终端标签页管理</li>
+        <li>UTF-8 encoding support / UTF-8 编码支持</li>
     </ul>
     
-    <h3>文件上传 (SFTP)</h3>
+    <h3>File Upload (SFTP) / 文件上传</h3>
     <ul>
-        <li><b>多文件并行上传</b>：支持同时选择多个文件上传</li>
-        <li><b>多连接并行</b>：支持多个 SSH 客户端同时上传</li>
-        <li><b>上传队列管理</b>：实时进度显示、任务编辑、重试、查看详情</li>
-        <li>支持自定义远程文件名（解决中文乱码问题）</li>
-        <li><b>前置/后置脚本</b>：可配置脚本模板，上传时灵活选择执行</li>
+        <li>Parallel multi-file upload / 多文件并行上传</li>
+        <li>Multiple SSH connections simultaneously / 支持多个 SSH 客户端同时上传</li>
+        <li>Upload queue management with progress display / 上传队列管理，实时进度显示</li>
+        <li>Custom remote filename support / 支持自定义远程文件名</li>
+        <li>Pre/Post upload script execution / 前置/后置脚本执行</li>
     </ul>
     ]]></description>
 

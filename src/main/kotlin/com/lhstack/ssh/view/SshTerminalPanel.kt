@@ -40,7 +40,6 @@ class SshTerminalPanel(
     private var termWidget: JediTermWidget? = null
 
     private var label = JLabel("正在连接 ${config.username}@${config.host}:${config.port}...", SwingConstants.CENTER)
-    private var statusLabel = JLabel()
     private var reconnectBtn = JButton("重新连接", AllIcons.Actions.Refresh)
 
     // 心跳保活
@@ -49,7 +48,7 @@ class SshTerminalPanel(
 
     @Volatile
     private var running = true
-    
+
     @Volatile
     private var disconnected = false
 
@@ -76,7 +75,7 @@ class SshTerminalPanel(
                     showError("无法创建Shell通道")
                     return@Thread
                 }
-                
+
                 val channel = shellChannel!!
                 channel.open().verify(30, TimeUnit.SECONDS)
 
@@ -88,21 +87,22 @@ class SshTerminalPanel(
 
                 SwingUtilities.invokeLater {
                     try {
-                        termWidget = object : JBTerminalWidget(project, JBTerminalSystemSettingsProvider(),parentDisposable) {
-                            override fun createScrollBar(): JScrollBar {
-                                return JBScrollBar()
+                        termWidget =
+                            object : JBTerminalWidget(project, JBTerminalSystemSettingsProvider(), parentDisposable) {
+                                override fun createScrollBar(): JScrollBar {
+                                    return JBScrollBar()
+                                }
+                            }.apply {
+                                ttyConnector = connector
+                                preferredSize = Dimension(800, 600)
                             }
-                        }.apply {
-                            ttyConnector = connector
-                            preferredSize = Dimension(800, 600)
-                        }
                         removeAll()
                         add(termWidget, BorderLayout.CENTER)
                         revalidate()
                         repaint()
                         termWidget?.start()
                         termWidget?.requestFocusInWindow()
-                        
+
                         // 启动心跳保活
                         startHeartbeat()
                     } catch (e: Exception) {
@@ -130,39 +130,39 @@ class SshTerminalPanel(
         revalidate()
         repaint()
     }
-    
+
     /**
      * 显示断线提示，带重连按钮
      */
     private fun showDisconnected() {
         if (disconnected) return
         disconnected = true
-        
+
         SwingUtilities.invokeLater {
             stopHeartbeat()
-            
+
             // 在终端上方显示断线提示条
             val disconnectPanel = JPanel(FlowLayout(FlowLayout.CENTER, 10, 5)).apply {
                 background = java.awt.Color(255, 200, 200)
                 add(JLabel("连接已断开").apply { icon = AllIcons.General.Warning })
-                
+
                 reconnectBtn.addActionListener { reconnect() }
                 add(reconnectBtn)
             }
-            
+
             add(disconnectPanel, BorderLayout.NORTH)
             revalidate()
             repaint()
         }
     }
-    
+
     /**
      * 重新连接
      */
     private fun reconnect() {
         reconnectBtn.isEnabled = false
         reconnectBtn.text = "连接中..."
-        
+
         Thread {
             try {
                 // 关闭旧连接
@@ -170,13 +170,14 @@ class SshTerminalPanel(
                     termWidget?.stop()
                     shellChannel?.close()
                     connectionManager.close()
-                } catch (_: Exception) {}
-                
+                } catch (_: Exception) {
+                }
+
                 // 重新创建连接
                 connectionManager = SshConnectionManager()
                 disconnected = false
                 running = true
-                
+
                 SwingUtilities.invokeLater {
                     removeAll()
                     label.text = "正在重新连接..."
@@ -184,7 +185,7 @@ class SshTerminalPanel(
                     revalidate()
                     repaint()
                 }
-                
+
                 // 重新连接
                 if (!connectionManager.connect(config)) {
                     showError("重新连接失败，请检查网络")
@@ -204,7 +205,7 @@ class SshTerminalPanel(
                     }
                     return@Thread
                 }
-                
+
                 val channel = shellChannel!!
                 channel.open().verify(30, TimeUnit.SECONDS)
 
@@ -216,23 +217,24 @@ class SshTerminalPanel(
 
                 SwingUtilities.invokeLater {
                     try {
-                        termWidget = object : JBTerminalWidget(project, JBTerminalSystemSettingsProvider(), parentDisposable) {
+                        termWidget =
+                            object : JBTerminalWidget(project, JBTerminalSystemSettingsProvider(), parentDisposable) {
 //                            override fun createScrollBar(): JScrollBar {
 //                                return JBScrollBar()
 //                            }
-                        }.apply {
-                            ttyConnector = connector
-                            preferredSize = Dimension(800, 600)
-                        }
+                            }.apply {
+                                ttyConnector = connector
+                                preferredSize = Dimension(800, 600)
+                            }
                         removeAll()
                         add(termWidget, BorderLayout.CENTER)
                         revalidate()
                         repaint()
                         termWidget?.start()
                         termWidget?.requestFocusInWindow()
-                        
+
                         startHeartbeat()
-                        
+
                         reconnectBtn.isEnabled = true
                         reconnectBtn.text = "重新连接"
                     } catch (e: Exception) {
@@ -250,7 +252,7 @@ class SshTerminalPanel(
             }
         }.start()
     }
-    
+
     /**
      * 启动心跳保活
      */
@@ -258,18 +260,18 @@ class SshTerminalPanel(
         stopHeartbeat()
         heartbeatTask = heartbeatExecutor.scheduleAtFixedRate({
             if (!running) return@scheduleAtFixedRate
-            
             try {
                 // 检查连接状态
                 if (!connectionManager.isConnected() || shellChannel?.isOpen != true) {
                     showDisconnected()
                 }
+                shellChannel?.session?.sendIgnoreMessage(0)
             } catch (e: Exception) {
                 showDisconnected()
             }
         }, 30, 30, TimeUnit.SECONDS)  // 每30秒检查一次
     }
-    
+
     /**
      * 停止心跳
      */
@@ -324,20 +326,21 @@ class SshTerminalPanel(
         }
 
         override fun ready(): Boolean {
-            return try { 
+            return try {
                 reader.ready()
-            } catch (_: Exception) { 
-                false 
+            } catch (_: Exception) {
+                false
             }
         }
 
         override fun getName(): String = "${config.username}@${config.host}"
 
         override fun close() {
-            try { 
+            try {
                 reader.close()
-                channel.close() 
-            } catch (_: Exception) {}
+                channel.close()
+            } catch (_: Exception) {
+            }
         }
     }
 }
