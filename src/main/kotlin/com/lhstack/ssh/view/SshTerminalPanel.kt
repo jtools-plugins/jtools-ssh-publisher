@@ -89,9 +89,7 @@ class SshTerminalPanel(
 
                 SwingUtilities.invokeLater {
                     try {
-                        termWidget = object : ShellTerminalWidget(project, JBTerminalSystemSettingsProvider(),parentDisposable) {
-
-                        }.apply {
+                        termWidget = ShellTerminalWidget(project, JBTerminalSystemSettingsProvider(),parentDisposable).apply {
                             ttyConnector = connector
                             preferredSize = Dimension(800, 600)
                         }
