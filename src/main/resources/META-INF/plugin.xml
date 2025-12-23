@@ -2,7 +2,7 @@
     <id>com.lhstack.ssh-publisher</id>
     <name>SSH Publisher</name>
     <version>1.1.1</version>
-    <vendor email="lhstack@example.com" url="https://github.com/lhstack">lhstack</vendor>
+    <vendor email="lhstack@foxmail.com" url="https://github.com/lhstack">lhstack</vendor>
 
     <description><![CDATA[
     <p>A powerful SSH client plugin for IntelliJ IDEA, supporting SSH connection management, terminal operations, and batch file uploads to multiple servers.</p>
