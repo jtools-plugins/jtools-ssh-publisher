@@ -8,91 +8,67 @@ import org.apache.sshd.sftp.client.SftpClient
 import org.apache.sshd.sftp.client.SftpClientFactory
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 import java.security.KeyPair
+import java.security.KeyPairGenerator
 import java.util.concurrent.TimeUnit
 
 /**
  * SSH连接管理器
  */
 class SshConnectionManager {
-
+    
     private val client: SshClient = SshClient.setUpDefaultClient().apply {
         start()
     }
     private var session: ClientSession? = null
     private var sftpClient: SftpClient? = null
-
-    @Volatile
-    private var cancelled = false
-
-    /**
-     * 取消当前操作
-     */
-    fun cancel() {
-        cancelled = true
-        disconnect()
-    }
-
+    
     /**
      * 连接SSH服务器
      */
     fun connect(config: SshConfig): Boolean {
-        if (cancelled) return false
-
         return try {
             disconnect()
-
+            
             println("[SSH] 正在连接 ${config.username}@${config.host}:${config.port}")
-
-            val connectFuture = client.connect(config.username, config.host, config.port)
-            if (!connectFuture.await(15, TimeUnit.SECONDS)) {
-                println("[SSH] 连接超时")
-                return false
-            }
-            if (cancelled) return false
-
-            session = connectFuture.session
-
+            
+            session = client.connect(config.username, config.host, config.port)
+                .verify(30, TimeUnit.SECONDS)
+                .session
+            
+            // 在session级别配置心跳保活（认证后生效）
             println("[SSH] 连接建立，正在认证...")
-
+            
             when (config.authType) {
                 SshConfig.AuthType.PASSWORD -> {
                     println("[SSH] 使用密码认证")
                     session?.addPasswordIdentity(config.password)
                 }
-
                 SshConfig.AuthType.KEY -> {
                     println("[SSH] 使用密钥认证")
                     val keyPair = loadKeyPair(config.privateKey, config.passphrase)
                     session?.addPublicKeyIdentity(keyPair)
                 }
             }
-
-            if (cancelled) return false
-
-            val authFuture = session?.auth()
-            if (authFuture?.await(15, TimeUnit.SECONDS) != true) {
-                println("[SSH] 认证超时")
-                return false
-            }
-
+            
+            session?.auth()?.verify(30, TimeUnit.SECONDS)
             val authenticated = session?.isAuthenticated == true
             println("[SSH] 认证结果: $authenticated")
-
+            
+            // 认证成功后配置心跳保活
             if (authenticated) {
                 try {
-                    org.apache.sshd.core.CoreModuleProperties.HEARTBEAT_INTERVAL.set(
-                        session,
-                        java.time.Duration.ofSeconds(30)
-                    )
+                    org.apache.sshd.core.CoreModuleProperties.HEARTBEAT_INTERVAL.set(session, java.time.Duration.ofSeconds(30))
                     org.apache.sshd.core.CoreModuleProperties.HEARTBEAT_NO_REPLY_MAX.set(session, 3)
                     println("[SSH] 心跳保活已配置")
                 } catch (e: Exception) {
                     println("[SSH] 心跳配置失败（不影响连接）: ${e.message}")
                 }
             }
-
+            
             authenticated
         } catch (e: Exception) {
             println("[SSH] 连接错误: ${e.message}")
