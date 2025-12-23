@@ -258,7 +258,6 @@ class SshTerminalPanel(
         stopHeartbeat()
         heartbeatTask = heartbeatExecutor.scheduleAtFixedRate({
             if (!running) return@scheduleAtFixedRate
-            
             try {
                 // 检查连接状态
                 if (!connectionManager.isConnected() || shellChannel?.isOpen != true) {

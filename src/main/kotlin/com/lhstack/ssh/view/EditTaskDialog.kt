@@ -39,7 +39,6 @@ class EditTaskDialog(
 
     private val localFileField = JBTextField(task.localFile.path)
     private val remotePathField = JBTextField(task.remotePath)
-    private val remoteFileNameField = JBTextField(task.remoteFileName)
 
     private val preScriptsModel = EditScriptTableModel(task.preScripts)
     private val postScriptsModel = EditScriptTableModel(task.postScripts)
@@ -89,7 +88,6 @@ class EditTaskDialog(
             .addVerticalGap(10)
             .addLabeledComponent(JBLabel("本地文件:"), filePanel)
             .addLabeledComponent(JBLabel("远程目录:"), remotePathField)
-            .addLabeledComponent(JBLabel("远程文件名:"), remoteFileNameField)
             .panel
 
         // 脚本选择Tab
@@ -143,7 +141,6 @@ class EditTaskDialog(
     override fun doOKAction() {
         val localPath = localFileField.text.trim()
         val remotePath = remotePathField.text.trim()
-        val remoteFileName = remoteFileNameField.text.trim()
 
         if (localPath.isEmpty()) {
             Messages.showErrorDialog(project, "请选择本地文件", "错误")
@@ -161,17 +158,10 @@ class EditTaskDialog(
             return
         }
 
-        if (remoteFileName.isEmpty()) {
-            Messages.showErrorDialog(project, "请输入远程文件名", "错误")
-            return
-        }
-
         // 创建更新后的任务
         val updatedTask = task.copy(
             localFile = localFile,
             remotePath = remotePath,
-            remoteFileName = remoteFileName,
-            totalBytes = localFile.length(),
             preScripts = preScriptsModel.getSelectedScripts(),
             postScripts = postScriptsModel.getSelectedScripts(),
             tempPreScript = tempPreScriptEditor.text.trim(),

@@ -1,45 +1,34 @@
 package com.lhstack.ssh.model
 
 import java.io.File
-import java.util.UUID
-
-/**
- * 上传任务状态
- */
-enum class UploadStatus {
-    PENDING,    // 等待中
-    UPLOADING,  // 上传中
-    SUCCESS,    // 成功
-    FAILED,     // 失败
-    CANCELLED   // 已取消
-}
 
 /**
  * 上传任务
  */
 data class UploadTask(
-    val id: String = UUID.randomUUID().toString(),
+    val id: String = System.currentTimeMillis().toString(),
     val localFile: File,
     val remotePath: String,
-    val remoteFileName: String,
     val config: SshConfig,
-    var status: UploadStatus = UploadStatus.PENDING,
+    val preScripts: List<ScriptConfig> = emptyList(),
+    val postScripts: List<ScriptConfig> = emptyList(),
+    val tempPreScript: String = "",
+    val tempPostScript: String = "",
+    var status: TaskStatus = TaskStatus.PENDING,
     var progress: Int = 0,
-    var uploadedBytes: Long = 0,
-    var totalBytes: Long = localFile.length(),
-    var errorMessage: String? = null,
-    var preScripts: List<ScriptConfig> = emptyList(),
-    var postScripts: List<ScriptConfig> = emptyList(),
-    var tempPreScript: String = "",
-    var tempPostScript: String = ""
+    var message: String = "等待中",
+    val logs: MutableList<String> = mutableListOf(),
+    val createTime: Long = System.currentTimeMillis()
 ) {
-    val fullRemotePath: String
-        get() = if (remotePath.endsWith("/")) {
-            remotePath + remoteFileName
-        } else {
-            "$remotePath/$remoteFileName"
-        }
-    
-    val displayName: String
-        get() = "${config.name}: ${localFile.name} -> $remoteFileName"
+    enum class TaskStatus {
+        PENDING,    // 等待中
+        RUNNING,    // 执行中
+        SUCCESS,    // 成功
+        FAILED,     // 失败
+        STOPPED     // 已停止
+    }
+
+    fun addLog(log: String) {
+        logs.add("[${java.text.SimpleDateFormat("HH:mm:ss").format(System.currentTimeMillis())}] $log")
+    }
 }

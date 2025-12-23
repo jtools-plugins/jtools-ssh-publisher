@@ -42,7 +42,7 @@ class PluginImpl : IPlugin {
         return CACHE.computeIfAbsent(project.locationHash) {
             val disposable = Disposer.newDisposable()
             DISPOSERS[project.locationHash] = disposable
-            MainView(disposable, project, LOGGERS[project.locationHash]!!, OPEN_THIS_PAGES[project.locationHash]!!)
+            MainView(disposable, project)
         }
     }
 
@@ -50,5 +50,5 @@ class PluginImpl : IPlugin {
 
     override fun pluginDesc(): String = "SshPublisher"
 
-    override fun pluginVersion(): String = "1.1.0"
+    override fun pluginVersion(): String = "1.0.1"
 }
