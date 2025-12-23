@@ -8,14 +8,14 @@ import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.SimpleToolWindowPanel
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.ColoredTreeCellRenderer
+import com.intellij.ui.JBSplitter
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.TreeSpeedSearch
-import com.intellij.ui.JBSplitter
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.treeStructure.Tree
 import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.service.SshConfigService
-import com.lhstack.tools.plugins.Logger
+import com.lhstack.ssh.service.UploadTaskManager
 import java.awt.BorderLayout
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
@@ -25,9 +25,7 @@ import javax.swing.tree.DefaultTreeModel
 
 class MainView(
     private val parentDisposable: Disposable,
-    val project: Project,
-    private val logger: Logger,
-    private val runnable: Runnable
+    val project: Project
 ) : SimpleToolWindowPanel(true), Disposable {
 
     private lateinit var tree: Tree
@@ -35,45 +33,28 @@ class MainView(
     private val rootNode = DefaultMutableTreeNode()
 
     private val terminalTabs = com.intellij.ui.components.JBTabbedPane(JTabbedPane.TOP)
-    private val splitPane = JBSplitter(true, 0.4f)
-    
-    // 左侧面板Tab（SSH列表 + 上传管理）
     private val leftTabs = com.intellij.ui.components.JBTabbedPane(JTabbedPane.TOP)
-    
-    // 上传管理面板
-    private lateinit var uploadProgressPanel: UploadProgressPanel
+    private val splitPane = JBSplitter(true, 0.4f)
+    private lateinit var uploadTaskPanel: UploadTaskPanel
 
     init {
         Disposer.register(parentDisposable, this)
         initTree()
-        initUploadPanel()
+        initUploadTaskPanel()
         initActionToolbar()
         initSplitPane()
         refreshTree()
     }
-    
-    private fun initUploadPanel() {
-        uploadProgressPanel = UploadProgressPanel(project)
-        Disposer.register(parentDisposable, uploadProgressPanel)
-        
-        // 监听上传任务变化，自动显示上传管理Tab
-        com.lhstack.ssh.service.UploadManager.getInstance().addListener(object : com.lhstack.ssh.service.UploadManager.UploadListener {
-            override fun onTaskAdded(task: com.lhstack.ssh.model.UploadTask) {
-                // 有新任务时自动切换到上传管理Tab
-                javax.swing.SwingUtilities.invokeLater {
-                    leftTabs.selectedIndex = 1
-                }
-            }
-            override fun onTaskUpdated(task: com.lhstack.ssh.model.UploadTask) {}
-            override fun onTaskRemoved(task: com.lhstack.ssh.model.UploadTask) {}
-            override fun onLogMessage(taskId: String, message: String) {}
-        })
+
+    private fun initUploadTaskPanel() {
+        uploadTaskPanel = UploadTaskPanel()
+        Disposer.register(parentDisposable, uploadTaskPanel)
     }
 
     private fun initSplitPane() {
-        // 左侧Tab：SSH列表 + 上传管理
+        // 左侧Tab：SSH连接 + 上传管理
         leftTabs.addTab("SSH连接", AllIcons.Nodes.Plugin, JBScrollPane(tree))
-        leftTabs.addTab("上传管理", AllIcons.Actions.Upload, uploadProgressPanel)
+        leftTabs.addTab("上传管理", AllIcons.Actions.Upload, uploadTaskPanel)
         
         splitPane.firstComponent = leftTabs
         splitPane.secondComponent = terminalTabs
@@ -163,7 +144,7 @@ class MainView(
     }
 
     private fun openTerminal(config: SshConfig) {
-        val terminalPanel = SshTerminalPanel(parentDisposable, config,project)
+        val terminalPanel = SshTerminalPanel(parentDisposable, config, project)
         val tabIndex = terminalTabs.tabCount
         terminalTabs.insertTab(config.name, AllIcons.Debugger.Console, terminalPanel, config.host, tabIndex)
         terminalTabs.selectedIndex = tabIndex
@@ -204,7 +185,7 @@ class MainView(
     }
 
     private fun openUploadDialog(config: SshConfig) {
-        MultiUploadDialog(project, config).show()
+        UploadDialog(project, config).show()
     }
 
     private fun editConfig(config: SshConfig) {
@@ -261,6 +242,13 @@ class MainView(
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
 
+            add(object : AnAction({ "批量上传" }, AllIcons.Actions.Upload) {
+                override fun actionPerformed(e: AnActionEvent) {
+                    BatchUploadDialog(project).show()
+                }
+                override fun getActionUpdateThread() = ActionUpdateThread.BGT
+            })
+
             add(object : AnAction({ "刷新" }, AllIcons.Actions.Refresh) {
                 override fun actionPerformed(e: AnActionEvent) = refreshTree()
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -284,7 +272,7 @@ class MainView(
         }
 
         val toolbar = ActionManager.getInstance()
-            .createActionToolbar("jtools-ssh-publisher-toolbar", actionGroup, true)
+            .createActionToolbar("ssh-publisher-toolbar", actionGroup, true)
         toolbar.targetComponent = this
 
         this.toolbar = JPanel(BorderLayout()).apply {
@@ -299,7 +287,6 @@ class MainView(
                 Disposer.dispose(component)
             }
         }
-        // 关闭上传管理器
-        com.lhstack.ssh.service.UploadManager.getInstance().shutdown()
+        UploadTaskManager.shutdown()
     }
 }
