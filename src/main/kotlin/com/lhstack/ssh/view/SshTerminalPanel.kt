@@ -14,6 +14,7 @@ import com.lhstack.ssh.service.SshConnectionManager
 import org.apache.sshd.client.channel.ChannelShell
 import org.apache.sshd.client.channel.ClientChannelEvent
 import org.jetbrains.plugins.terminal.JBTerminalSystemSettingsProvider
+import org.jetbrains.plugins.terminal.ShellTerminalWidget
 
 import java.awt.BorderLayout
 import java.awt.Dimension
@@ -88,10 +89,8 @@ class SshTerminalPanel(
 
                 SwingUtilities.invokeLater {
                     try {
-                        termWidget = object : JBTerminalWidget(project, JBTerminalSystemSettingsProvider(),parentDisposable) {
-                            override fun createScrollBar(): JScrollBar {
-                                return JBScrollBar()
-                            }
+                        termWidget = object : ShellTerminalWidget(project, JBTerminalSystemSettingsProvider(),parentDisposable) {
+
                         }.apply {
                             ttyConnector = connector
                             preferredSize = Dimension(800, 600)
