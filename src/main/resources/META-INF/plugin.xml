@@ -1,56 +1,74 @@
 <idea-plugin>
     <id>com.lhstack.ssh-publisher</id>
-    <name>JTools SSH Publisher</name>
+    <name>SSH Publisher</name>
     <version>1.1.1</version>
-    <vendor email="support@example.com" url="https://github.com/lhstack">lhstack</vendor>
+    <vendor email="lhstack@example.com" url="https://github.com/lhstack">lhstack</vendor>
 
     <description><![CDATA[
-    <p>A powerful SSH client plugin for IntelliJ IDEA, supporting SSH connection management, terminal operations, and parallel multi-file uploads.</p>
-    <p>功能强大的 SSH 客户端插件，支持 SSH 连接管理、终端操作和多文件并行上传功能。</p>
-    
-    <h3>SSH Connection Management / SSH 连接管理</h3>
+    <p>A powerful SSH client plugin for IntelliJ IDEA, supporting SSH connection management, terminal operations, and batch file uploads to multiple servers.</p>
+    <p>功能强大的 SSH 客户端插件，支持 SSH 连接管理、终端操作和批量文件上传功能。</p>
+
+    <h3>Features / 功能特性</h3>
+
+    <h4>SSH Connection Management / SSH 连接管理</h4>
     <ul>
-        <li>Password and private key authentication / 支持密码和密钥两种认证方式</li>
-        <li>Group-based configuration management / 配置分组管理，清晰组织多个服务器</li>
-        <li>Connection testing / 连接测试功能，快速验证配置</li>
-        <li>Heartbeat keep-alive mechanism / 心跳保活机制，防止连接超时断开</li>
-        <li>Auto-reconnect on disconnect / 断线自动检测，支持一键重连</li>
+        <li>Password and private key authentication / 支持密码和密钥认证</li>
+        <li>Group-based configuration / 配置分组管理</li>
+        <li>Connection testing / 连接测试功能</li>
+        <li>Heartbeat keep-alive / 心跳保活机制</li>
+        <li>Auto-reconnect support / 断线重连支持</li>
     </ul>
-    
-    <h3>SSH Terminal / SSH 终端</h3>
+
+    <h4>SSH Terminal / SSH 终端</h4>
     <ul>
-        <li>JediTerm-based terminal emulator / 基于 JediTerm 的专业终端模拟器</li>
-        <li>Auto-adapts to IDEA theme colors / 自动适配 IDEA 主题颜色</li>
-        <li>Multi-tab terminal management / 多终端标签页管理</li>
-        <li>UTF-8 encoding support / UTF-8 编码支持</li>
+        <li>JediTerm-based terminal emulator / 基于 JediTerm 终端模拟器</li>
+        <li>IDEA theme color adaptation / 自动适配 IDEA 主题颜色</li>
+        <li>Chinese font support / 中文字体支持</li>
+        <li>Multi-tab terminal / 多终端标签页</li>
+        <li>UTF-8 encoding / UTF-8 编码支持</li>
     </ul>
-    
-    <h3>File Upload (SFTP) / 文件上传</h3>
+
+    <h4>File Upload (SFTP) / 文件上传</h4>
     <ul>
-        <li>Parallel multi-file upload / 多文件并行上传</li>
-        <li>Multiple SSH connections simultaneously / 支持多个 SSH 客户端同时上传</li>
-        <li>Upload queue management with progress display / 上传队列管理，实时进度显示</li>
-        <li>Custom remote filename support / 支持自定义远程文件名</li>
-        <li>Pre/Post upload script execution / 前置/后置脚本执行</li>
+        <li>Single server upload / 单服务器上传</li>
+        <li>Batch upload to multiple servers / 批量上传到多台服务器</li>
+        <li>Upload queue with progress / 上传队列管理，实时进度</li>
+        <li>Custom remote filename / 自定义远程文件名</li>
+        <li>Pre/Post upload scripts / 前置/后置脚本执行</li>
+        <li>Per-server script selection / 每个服务器独立选择脚本</li>
     </ul>
+
+    <h4>Data Storage / 数据存储</h4>
+    <p>SQLite database at: ~/.jtools/jtools-ssh-publisher/db.data</p>
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>1.1.1</b>
+    <ul>
+        <li>新增：批量上传功能，同一文件上传到多台服务器</li>
+        <li>新增：每个服务器可独立选择前置/后置脚本</li>
+        <li>新增：上传任务停止、重试、详情查看功能</li>
+        <li>新增：临时脚本支持（一次性执行）</li>
+        <li>优化：使用 UUID 生成任务ID，避免并发冲突</li>
+        <li>优化：SSH 连接超时时间调整为15秒</li>
+        <li>优化：批量上传对话框支持拖拽调整区域大小</li>
+        <li>修复：多任务同时创建时ID冲突问题</li>
+        <li>修复：任务停止后无法正确取消连接问题</li>
+    </ul>
+
     <b>1.1.0</b>
     <ul>
-        <li>新增：多文件并行上传功能</li>
         <li>新增：上传队列管理面板</li>
-        <li>新增：任务编辑、重试、查看详情功能</li>
         <li>新增：SSH 心跳保活机制</li>
         <li>新增：断线检测和一键重连</li>
-        <li>优化：界面布局，SSH列表与上传管理同级显示</li>
-        <li>优化：日志面板可折叠，支持拖拽调整高度</li>
+        <li>新增：自定义远程文件名（解决中文乱码）</li>
+        <li>优化：终端中文字体显示</li>
     </ul>
-    
+
     <b>1.0.0</b>
     <ul>
         <li>初始版本</li>
-        <li>SSH连接管理</li>
+        <li>SSH 连接管理</li>
         <li>终端功能</li>
         <li>文件上传</li>
     </ul>
