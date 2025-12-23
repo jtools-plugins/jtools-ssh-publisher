@@ -5,7 +5,6 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.terminal.JBTerminalWidget
-import com.intellij.ui.components.JBScrollBar
 import com.jediterm.terminal.Questioner
 import com.jediterm.terminal.TtyConnector
 import com.jediterm.terminal.ui.JediTermWidget
@@ -14,7 +13,7 @@ import com.lhstack.ssh.service.SshConnectionManager
 import org.apache.sshd.client.channel.ChannelShell
 import org.apache.sshd.client.channel.ClientChannelEvent
 import org.jetbrains.plugins.terminal.JBTerminalSystemSettingsProvider
-
+import org.jetbrains.plugins.terminal.ShellTerminalWidget
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
@@ -88,11 +87,7 @@ class SshTerminalPanel(
 
                 SwingUtilities.invokeLater {
                     try {
-                        termWidget = object : JBTerminalWidget(project, JBTerminalSystemSettingsProvider(),parentDisposable) {
-                            override fun createScrollBar(): JScrollBar {
-                                return JBScrollBar()
-                            }
-                        }.apply {
+                        termWidget = ShellTerminalWidget(project, JBTerminalSystemSettingsProvider(), parentDisposable).apply {
                             ttyConnector = connector
                             preferredSize = Dimension(800, 600)
                         }
