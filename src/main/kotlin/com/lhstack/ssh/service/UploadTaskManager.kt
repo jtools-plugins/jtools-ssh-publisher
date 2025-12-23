@@ -16,6 +16,7 @@ object UploadTaskManager {
     private val listeners = CopyOnWriteArrayList<TaskListener>()
     private val executor = Executors.newFixedThreadPool(3)
     private val runningFutures = ConcurrentHashMap<String, Future<*>>()
+    private val runningManagers = ConcurrentHashMap<String, SshConnectionManager>()
 
     interface TaskListener {
         fun onTaskAdded(task: UploadTask)
@@ -23,14 +24,8 @@ object UploadTaskManager {
         fun onTaskRemoved(task: UploadTask)
     }
 
-    fun addListener(listener: TaskListener) {
-        listeners.add(listener)
-    }
-
-    fun removeListener(listener: TaskListener) {
-        listeners.remove(listener)
-    }
-
+    fun addListener(listener: TaskListener) = listeners.add(listener)
+    fun removeListener(listener: TaskListener) = listeners.remove(listener)
     fun getTasks(): List<UploadTask> = tasks.toList()
 
     fun addTask(task: UploadTask) {
@@ -48,18 +43,23 @@ object UploadTaskManager {
     }
 
     fun removeTask(task: UploadTask) {
-        runningFutures.remove(task.id)?.cancel(true)
+        cancelTask(task)
         tasks.remove(task)
         notifyTaskRemoved(task)
     }
 
     fun stopTask(task: UploadTask) {
-        runningFutures.remove(task.id)?.cancel(true)
+        cancelTask(task)
         updateTask(task) {
             status = UploadTask.TaskStatus.STOPPED
             message = "已停止"
             addLog("===== 任务已停止 =====")
         }
+    }
+
+    private fun cancelTask(task: UploadTask) {
+        runningManagers.remove(task.id)?.cancel()
+        runningFutures.remove(task.id)?.cancel(true)
     }
 
     fun stopAllTasks() {
@@ -68,7 +68,6 @@ object UploadTaskManager {
     }
 
     fun retryTask(task: UploadTask) {
-        // 重置任务状态
         task.status = UploadTask.TaskStatus.PENDING
         task.progress = 0
         task.message = "等待中"
@@ -79,12 +78,11 @@ object UploadTaskManager {
     }
 
     fun clearCompletedTasks() {
-        val completed = tasks.filter { 
-            it.status == UploadTask.TaskStatus.SUCCESS || 
-            it.status == UploadTask.TaskStatus.FAILED ||
-            it.status == UploadTask.TaskStatus.STOPPED
-        }
-        completed.forEach { task ->
+        tasks.filter {
+            it.status == UploadTask.TaskStatus.SUCCESS ||
+                    it.status == UploadTask.TaskStatus.FAILED ||
+                    it.status == UploadTask.TaskStatus.STOPPED
+        }.forEach { task ->
             tasks.remove(task)
             notifyTaskRemoved(task)
         }
@@ -92,32 +90,32 @@ object UploadTaskManager {
 
     private fun executeTask(task: UploadTask) {
         val future = executor.submit {
-            var manager: SshConnectionManager? = null
+            val manager = SshConnectionManager()
+            runningManagers[task.id] = manager
+
             try {
-                manager = SshConnectionManager()
-                
                 updateTask(task) {
                     status = UploadTask.TaskStatus.RUNNING
                     message = "正在连接..."
                     addLog("开始连接 ${config.host}:${config.port}")
                 }
 
-                // 检查是否被取消
-                if (Thread.currentThread().isInterrupted) return@submit
-
                 if (!manager.connect(task.config)) {
-                    updateTask(task) {
-                        status = UploadTask.TaskStatus.FAILED
-                        message = "连接失败"
-                        addLog("✗ 连接失败")
+                    if (task.status != UploadTask.TaskStatus.STOPPED) {
+                        updateTask(task) {
+                            status = UploadTask.TaskStatus.FAILED
+                            message = "连接失败"
+                            addLog("✗ 连接失败")
+                        }
                     }
                     return@submit
                 }
                 task.addLog("✓ 连接成功")
+                notifyTaskUpdated(task)
 
                 // 执行前置脚本
-                task.preScripts.forEach { script ->
-                    if (Thread.currentThread().isInterrupted) return@submit
+                for (script in task.preScripts) {
+                    if (task.status == UploadTask.TaskStatus.STOPPED) return@submit
                     if (script.content.isNotEmpty()) {
                         updateTask(task) {
                             message = "执行前置脚本: ${script.name}"
@@ -133,8 +131,7 @@ object UploadTaskManager {
                 }
 
                 // 执行临时前置脚本
-                if (task.tempPreScript.isNotEmpty()) {
-                    if (Thread.currentThread().isInterrupted) return@submit
+                if (task.tempPreScript.isNotEmpty() && task.status != UploadTask.TaskStatus.STOPPED) {
                     updateTask(task) {
                         message = "执行临时前置脚本"
                         addLog("执行临时前置脚本")
@@ -148,14 +145,14 @@ object UploadTaskManager {
                 }
 
                 // 上传文件
-                if (Thread.currentThread().isInterrupted) return@submit
+                if (task.status == UploadTask.TaskStatus.STOPPED) return@submit
                 updateTask(task) {
                     message = "正在上传..."
                     addLog("开始上传: ${localFile.name} -> $remotePath")
                 }
 
                 val success = manager.uploadFile(task.localFile, task.remotePath) { uploaded, total ->
-                    if (!Thread.currentThread().isInterrupted) {
+                    if (task.status != UploadTask.TaskStatus.STOPPED) {
                         val percent = (uploaded * 100 / total).toInt()
                         updateTask(task) {
                             progress = percent
@@ -164,7 +161,7 @@ object UploadTaskManager {
                     }
                 }
 
-                if (Thread.currentThread().isInterrupted) return@submit
+                if (task.status == UploadTask.TaskStatus.STOPPED) return@submit
 
                 if (!success) {
                     updateTask(task) {
@@ -175,10 +172,11 @@ object UploadTaskManager {
                     return@submit
                 }
                 task.addLog("✓ 上传成功")
+                notifyTaskUpdated(task)
 
                 // 执行后置脚本
-                task.postScripts.forEach { script ->
-                    if (Thread.currentThread().isInterrupted) return@submit
+                for (script in task.postScripts) {
+                    if (task.status == UploadTask.TaskStatus.STOPPED) return@submit
                     if (script.content.isNotEmpty()) {
                         updateTask(task) {
                             message = "执行后置脚本: ${script.name}"
@@ -194,8 +192,7 @@ object UploadTaskManager {
                 }
 
                 // 执行临时后置脚本
-                if (task.tempPostScript.isNotEmpty()) {
-                    if (Thread.currentThread().isInterrupted) return@submit
+                if (task.tempPostScript.isNotEmpty() && task.status != UploadTask.TaskStatus.STOPPED) {
                     updateTask(task) {
                         message = "执行临时后置脚本"
                         addLog("执行临时后置脚本")
@@ -208,7 +205,7 @@ object UploadTaskManager {
                     }
                 }
 
-                if (Thread.currentThread().isInterrupted) return@submit
+                if (task.status == UploadTask.TaskStatus.STOPPED) return@submit
 
                 updateTask(task) {
                     status = UploadTask.TaskStatus.SUCCESS
@@ -217,10 +214,8 @@ object UploadTaskManager {
                     addLog("===== 任务完成 =====")
                 }
 
-            } catch (e: InterruptedException) {
-                // 任务被中断，不更新状态（已在stopTask中处理）
             } catch (e: Exception) {
-                if (!Thread.currentThread().isInterrupted) {
+                if (task.status != UploadTask.TaskStatus.STOPPED) {
                     updateTask(task) {
                         status = UploadTask.TaskStatus.FAILED
                         message = "错误: ${e.message}"
@@ -228,7 +223,8 @@ object UploadTaskManager {
                     }
                 }
             } finally {
-                manager?.close()
+                manager.close()
+                runningManagers.remove(task.id)
                 runningFutures.remove(task.id)
             }
         }
@@ -241,24 +237,19 @@ object UploadTaskManager {
     }
 
     private fun notifyTaskAdded(task: UploadTask) {
-        SwingUtilities.invokeLater {
-            listeners.forEach { it.onTaskAdded(task) }
-        }
+        SwingUtilities.invokeLater { listeners.forEach { it.onTaskAdded(task) } }
     }
 
     private fun notifyTaskUpdated(task: UploadTask) {
-        SwingUtilities.invokeLater {
-            listeners.forEach { it.onTaskUpdated(task) }
-        }
+        SwingUtilities.invokeLater { listeners.forEach { it.onTaskUpdated(task) } }
     }
 
     private fun notifyTaskRemoved(task: UploadTask) {
-        SwingUtilities.invokeLater {
-            listeners.forEach { it.onTaskRemoved(task) }
-        }
+        SwingUtilities.invokeLater { listeners.forEach { it.onTaskRemoved(task) } }
     }
 
     fun shutdown() {
+        runningManagers.values.forEach { it.cancel() }
         executor.shutdownNow()
     }
 }

@@ -1,12 +1,13 @@
 package com.lhstack.ssh.model
 
 import java.io.File
+import java.util.UUID
 
 /**
  * 上传任务
  */
 data class UploadTask(
-    val id: String = System.currentTimeMillis().toString(),
+    val id: String = UUID.randomUUID().toString(),
     val localFile: File,
     val remotePath: String,
     val config: SshConfig,
