@@ -121,7 +121,7 @@ build/distributions/JTools-SSH-Publisher-*.zip
 
 ## 📄 License
 
-[MIT License](LICENSE)
+[Apache2.0 License](./LICENSE)
 
 ## 🤝 贡献
 
