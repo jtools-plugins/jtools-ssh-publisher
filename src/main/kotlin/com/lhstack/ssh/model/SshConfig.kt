@@ -1,12 +1,13 @@
 package com.lhstack.ssh.model
 
 import java.io.Serializable
+import java.util.UUID
 
 /**
  * SSH连接配置
  */
 data class SshConfig(
-    var id: String = System.currentTimeMillis().toString(),
+    var id: String = UUID.randomUUID().toString().replace("-",""),
     var group: String = "",
     var name: String = "",
     var host: String = "127.0.0.1",

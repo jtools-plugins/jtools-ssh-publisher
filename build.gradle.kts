@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "com.lhstack"
-version = "1.0.2"
+version = "1.0.3"
 
 
 repositories {
@@ -29,7 +29,7 @@ dependencies {
     }
     implementation("org.apache.sshd:sshd-sftp:2.15.0")
     implementation("org.xerial:sqlite-jdbc:3.45.1.0")
-    implementation(files("C:/Users/1/.jtools/sdk/sdk.jar"))
+    implementation(files("/Users/lhstack/.jtools/sdk/sdk.jar"))
     testImplementation("org.jetbrains.kotlin:kotlin-test")
 }
 tasks {
