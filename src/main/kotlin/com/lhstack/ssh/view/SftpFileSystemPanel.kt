@@ -55,8 +55,16 @@ class SftpFileSystemPanel(
         isStringPainted = true
         preferredSize = java.awt.Dimension(150, 16)
     }
+    private val cancelButton = JButton("取消").apply {
+        isVisible = false
+        addActionListener { cancelTransfer() }
+    }
 
     private var currentPath = "/"
+    
+    @Volatile
+    private var transferCancelled = false
+    private var currentTransferFuture: java.util.concurrent.Future<*>? = null
 
     init {
         initToolbar()
@@ -182,7 +190,10 @@ class SftpFileSystemPanel(
         val statusBar = JPanel(BorderLayout(10, 0)).apply {
             border = JBUI.Borders.empty(3, 5)
             add(statusLabel, BorderLayout.WEST)
-            add(progressBar, BorderLayout.CENTER)
+            add(JPanel(BorderLayout(5, 0)).apply {
+                add(progressBar, BorderLayout.CENTER)
+                add(cancelButton, BorderLayout.EAST)
+            }, BorderLayout.CENTER)
             add(JBLabel("${config.name} (${config.host})").apply {
                 foreground = JBUI.CurrentTheme.ContextHelp.FOREGROUND
             }, BorderLayout.EAST)
@@ -336,7 +347,37 @@ class SftpFileSystemPanel(
         }
     }
 
-    private fun refresh() = loadRootDirectory()
+    private fun refresh() {
+        // 检查连接状态，断开则重连
+        if (!connectionManager.isConnected()) {
+            statusLabel.text = "正在重连..."
+            statusLabel.icon = AllIcons.Process.Step_1
+            executor.submit {
+                try {
+                    if (connectionManager.connect(config)) {
+                        SwingUtilities.invokeLater {
+                            statusLabel.text = "已重连"
+                            statusLabel.icon = AllIcons.General.InspectionsOK
+                            loadRootDirectory()
+                        }
+                    } else {
+                        SwingUtilities.invokeLater {
+                            statusLabel.text = "重连失败"
+                            statusLabel.icon = AllIcons.General.Error
+                            Messages.showErrorDialog(project, "无法重新连接到服务器", "连接失败")
+                        }
+                    }
+                } catch (e: Exception) {
+                    SwingUtilities.invokeLater {
+                        statusLabel.text = "重连失败: ${e.message}"
+                        statusLabel.icon = AllIcons.General.Error
+                    }
+                }
+            }
+        } else {
+            loadRootDirectory()
+        }
+    }
 
     private fun uploadFile() {
         val descriptor = FileChooserDescriptorFactory.createSingleFileDescriptor()
@@ -350,17 +391,20 @@ class SftpFileSystemPanel(
 
     private fun doUpload(localFile: File, remotePath: String) {
         showProgress(true, "上传: ${localFile.name}")
-        executor.submit {
+        transferCancelled = false
+
+        currentTransferFuture = executor.submit {
+            val sftp = connectionManager.getSftpClient()
+            var success = false
             try {
-                val sftp = connectionManager.getSftpClient()
                 val totalSize = localFile.length()
                 var uploaded = 0L
 
                 sftp.write(remotePath).use { output ->
                     localFile.inputStream().use { input ->
                         val buffer = ByteArray(32768)
-                        var read: Int
-                        while (input.read(buffer).also { read = it } != -1) {
+                        var read: Int = 0
+                        while (!transferCancelled && input.read(buffer).also { read = it } != -1) {
                             output.write(buffer, 0, read)
                             uploaded += read
                             val percent = (uploaded * 100 / totalSize).toInt()
@@ -371,14 +415,29 @@ class SftpFileSystemPanel(
                         }
                     }
                 }
-                SwingUtilities.invokeLater {
-                    showProgress(false, "上传完成")
-                    refresh()
-                }
+                success = !transferCancelled
             } catch (e: Exception) {
                 SwingUtilities.invokeLater {
-                    showProgress(false, "上传失败")
-                    Messages.showErrorDialog(project, "上传失败: ${e.message}", "错误")
+                    showProgress(false, if (transferCancelled) "上传已取消" else "上传失败")
+                    if (!transferCancelled) {
+                        Messages.showErrorDialog(project, "上传失败: ${e.message}", "错误")
+                    }
+                }
+            } finally {
+                // 在executor线程中删除未完成的文件
+                if (transferCancelled || !success) {
+                    try {
+                        sftp.remove(remotePath)
+                    } catch (_: Exception) {
+                    }
+                }
+                SwingUtilities.invokeLater {
+                    if (success) {
+                        showProgress(false, "上传完成")
+                        refresh()
+                    } else if (transferCancelled) {
+                        showProgress(false, "上传已取消")
+                    }
                 }
             }
         }
@@ -404,7 +463,9 @@ class SftpFileSystemPanel(
 
     private fun doDownload(remotePath: String, localFile: File, totalSize: Long) {
         showProgress(true, "下载: ${localFile.name}")
-        executor.submit {
+        transferCancelled = false
+        
+        currentTransferFuture = executor.submit {
             try {
                 val sftp = connectionManager.getSftpClient()
                 var downloaded = 0L
@@ -412,8 +473,8 @@ class SftpFileSystemPanel(
                 sftp.read(remotePath).use { input ->
                     localFile.outputStream().use { output ->
                         val buffer = ByteArray(32768)
-                        var read: Int
-                        while (input.read(buffer).also { read = it } != -1) {
+                        var read: Int = 0
+                        while (!transferCancelled && input.read(buffer).also { read = it } != -1) {
                             output.write(buffer, 0, read)
                             downloaded += read
                             val percent = if (totalSize > 0) (downloaded * 100 / totalSize).toInt() else 0
@@ -424,14 +485,25 @@ class SftpFileSystemPanel(
                         }
                     }
                 }
+                
                 SwingUtilities.invokeLater {
-                    showProgress(false, "下载完成")
-                    Messages.showInfoMessage(project, "已保存到:\n${localFile.absolutePath}", "下载完成")
+                    if (transferCancelled) {
+                        showProgress(false, "下载已取消")
+                        // 删除未完成的文件
+                        localFile.delete()
+                    } else {
+                        showProgress(false, "下载完成")
+                        Messages.showInfoMessage(project, "已保存到:\n${localFile.absolutePath}", "下载完成")
+                    }
                 }
             } catch (e: Exception) {
                 SwingUtilities.invokeLater {
-                    showProgress(false, "下载失败")
-                    Messages.showErrorDialog(project, "下载失败: ${e.message}", "错误")
+                    showProgress(false, if (transferCancelled) "下载已取消" else "下载失败")
+                    if (!transferCancelled) {
+                        Messages.showErrorDialog(project, "下载失败: ${e.message}", "错误")
+                    }
+                    // 删除未完成的文件
+                    localFile.delete()
                 }
             }
         }
@@ -560,8 +632,15 @@ class SftpFileSystemPanel(
     private fun showProgress(show: Boolean, msg: String) {
         progressBar.isVisible = show
         progressBar.value = 0
+        cancelButton.isVisible = show
         statusLabel.text = msg
         statusLabel.icon = if (show) AllIcons.Process.Step_1 else AllIcons.General.InspectionsOK
+    }
+
+    private fun cancelTransfer() {
+        transferCancelled = true
+        currentTransferFuture?.cancel(true)
+        statusLabel.text = "正在取消..."
     }
 
     private fun formatSize(bytes: Long) = when {
