@@ -233,7 +233,7 @@ class AddItemDialog(
 
     private fun buildConfig(): SshConfig {
         return SshConfig(
-            id = existingConfig?.id ?: System.currentTimeMillis().toString(),
+            id = existingConfig?.id ?: java.util.UUID.randomUUID().toString().replace("-",""),
             group = (groupCombo.selectedItem as? String)?.trim() ?: "默认",
             name = nameField.text.trim(),
             host = hostField.text.trim(),
@@ -287,6 +287,12 @@ class AddItemDialog(
             Messages.showErrorDialog(project, "请输入主机地址", "错误")
             return
         }
+/*        // 检查 group+name 是否重复（排除自己）
+        println("[DEBUG] Checking duplicate: group=${config.group}, name=${config.name}, excludeId=${existingConfig?.id}")
+        if (SshConfigService.existsByGroupAndName(config.group, config.name, existingConfig?.id)) {
+            Messages.showErrorDialog(project, "分组 \"${config.group}\" 下已存在名称为 \"${config.name}\" 的配置", "错误")
+            return
+        }*/
 
         if (existingConfig == null) {
             SshConfigService.addConfig(config)

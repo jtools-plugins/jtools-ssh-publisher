@@ -92,7 +92,7 @@ class MainView(
 
         tree.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
-                if (e.clickCount == 2) {
+                if (e.clickCount == 2 && e.button == MouseEvent.BUTTON1) {
                     getSelectedConfig()?.let { openTerminal(it) }
                 }
             }
