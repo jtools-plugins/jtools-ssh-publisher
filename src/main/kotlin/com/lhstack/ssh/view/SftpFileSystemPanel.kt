@@ -590,6 +590,7 @@ class FileTreeRenderer : ColoredTreeCellRenderer() {
             is FileNode -> {
                 icon = if (obj.isDirectory) AllIcons.Nodes.Folder else getFileIcon(obj.name)
                 append(obj.name, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                append("  ${obj.permissions}", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)
                 if (!obj.isDirectory) {
                     append("  ${formatSize(obj.size)}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 }
