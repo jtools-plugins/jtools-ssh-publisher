@@ -6,7 +6,10 @@
 
     <description><![CDATA[
     <p>A powerful SSH client plugin for IntelliJ IDEA with terminal, file browser, and batch upload capabilities.</p>
+
     <p>功能强大的 SSH 客户端插件，支持终端、文件浏览器和批量上传功能。</p>
+
+    <a href="https://github.com/jtools-plugins/jtools-ssh-publisher">GitHub</a>
 
     <h3>Features / 功能特性</h3>
 
