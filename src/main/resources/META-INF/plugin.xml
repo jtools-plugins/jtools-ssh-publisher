@@ -1,76 +1,85 @@
 <idea-plugin>
     <id>com.lhstack.ssh-publisher</id>
-    <name>SSH Publisher</name>
-    <version>1.1.1</version>
+    <name>JTools SSH Publisher</name>
+    <version>1.1.2</version>
     <vendor email="lhstack@foxmail.com" url="https://github.com/lhstack">lhstack</vendor>
 
     <description><![CDATA[
-    <p>A powerful SSH client plugin for IntelliJ IDEA, supporting SSH connection management, terminal operations, and batch file uploads to multiple servers.</p>
-    <p>功能强大的 SSH 客户端插件，支持 SSH 连接管理、终端操作和批量文件上传功能。</p>
+    <p>A powerful SSH client plugin for IntelliJ IDEA with terminal, file browser, and batch upload capabilities.</p>
+    <p>功能强大的 SSH 客户端插件，支持终端、文件浏览器和批量上传功能。</p>
 
     <h3>Features / 功能特性</h3>
 
-    <h4>SSH Connection Management / SSH 连接管理</h4>
+    <h4>SSH Connection / SSH 连接</h4>
     <ul>
-        <li>Password and private key authentication / 支持密码和密钥认证</li>
+        <li>Password & private key authentication / 密码和密钥认证</li>
         <li>Group-based configuration / 配置分组管理</li>
-        <li>Connection testing / 连接测试功能</li>
-        <li>Heartbeat keep-alive / 心跳保活机制</li>
-        <li>Auto-reconnect support / 断线重连支持</li>
+        <li>Connection testing / 连接测试</li>
+        <li>Heartbeat keep-alive / 心跳保活</li>
     </ul>
 
-    <h4>SSH Terminal / SSH 终端</h4>
+    <h4>Terminal / 终端</h4>
     <ul>
-        <li>JediTerm-based terminal emulator / 基于 JediTerm 终端模拟器</li>
-        <li>IDEA theme color adaptation / 自动适配 IDEA 主题颜色</li>
-        <li>Chinese font support / 中文字体支持</li>
-        <li>Multi-tab terminal / 多终端标签页</li>
-        <li>UTF-8 encoding / UTF-8 编码支持</li>
+        <li>JediTerm-based emulator / 基于 JediTerm</li>
+        <li>IDEA theme adaptation / 适配 IDEA 主题</li>
+        <li>Chinese font support / 中文支持</li>
+        <li>Tab drag reorder / Tab 拖拽排序</li>
+        <li>Split view (right/down) / 分屏显示</li>
     </ul>
 
-    <h4>File Upload (SFTP) / 文件上传</h4>
+    <h4>File Browser (SFTP) / 文件浏览器</h4>
     <ul>
-        <li>Single server upload / 单服务器上传</li>
-        <li>Batch upload to multiple servers / 批量上传到多台服务器</li>
-        <li>Upload queue with progress / 上传队列管理，实时进度</li>
+        <li>Remote file explorer / 远程文件浏览</li>
+        <li>Upload/Download with progress / 上传下载带进度</li>
+        <li>Create folder, rename, delete / 新建、重命名、删除</li>
+        <li>File properties view / 文件属性查看</li>
+        <li>Quick search / 快速搜索</li>
+    </ul>
+
+    <h4>Batch Upload / 批量上传</h4>
+    <ul>
+        <li>Upload to multiple servers / 上传到多台服务器</li>
+        <li>Upload queue management / 上传队列管理</li>
+        <li>Pre/Post scripts / 前置/后置脚本</li>
         <li>Custom remote filename / 自定义远程文件名</li>
-        <li>Pre/Post upload scripts / 前置/后置脚本执行</li>
-        <li>Per-server script selection / 每个服务器独立选择脚本</li>
     </ul>
 
     <h4>Data Storage / 数据存储</h4>
-    <p>SQLite database at: ~/.jtools/jtools-ssh-publisher/db.data</p>
+    <p>SQLite: ~/.jtools/jtools-ssh-publisher/db.data</p>
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>1.1.2</b>
+    <ul>
+        <li>新增：SFTP 文件浏览器</li>
+        <li>新增：文件上传/下载进度显示</li>
+        <li>新增：Tab 拖拽排序</li>
+        <li>新增：Tab 右键分屏（向右/向下拆分）</li>
+        <li>新增：文件快速搜索</li>
+        <li>新增：文件属性查看（大小、权限、时间）</li>
+        <li>优化：工具栏使用 ActionToolbar</li>
+        <li>优化：文件列表懒加载</li>
+    </ul>
+
     <b>1.1.1</b>
     <ul>
-        <li>新增：批量上传功能，同一文件上传到多台服务器</li>
-        <li>新增：每个服务器可独立选择前置/后置脚本</li>
-        <li>新增：上传任务停止、重试、详情查看功能</li>
-        <li>新增：临时脚本支持（一次性执行）</li>
-        <li>优化：使用 UUID 生成任务ID，避免并发冲突</li>
-        <li>优化：SSH 连接超时时间调整为15秒</li>
-        <li>优化：批量上传对话框支持拖拽调整区域大小</li>
-        <li>修复：多任务同时创建时ID冲突问题</li>
-        <li>修复：任务停止后无法正确取消连接问题</li>
+        <li>新增：批量上传到多台服务器</li>
+        <li>新增：每个服务器独立选择脚本</li>
+        <li>新增：上传任务停止、重试功能</li>
+        <li>新增：临时脚本支持</li>
+        <li>修复：任务ID冲突问题</li>
     </ul>
 
     <b>1.1.0</b>
     <ul>
-        <li>新增：上传队列管理面板</li>
-        <li>新增：SSH 心跳保活机制</li>
-        <li>新增：断线检测和一键重连</li>
-        <li>新增：自定义远程文件名（解决中文乱码）</li>
-        <li>优化：终端中文字体显示</li>
+        <li>新增：上传队列管理</li>
+        <li>新增：心跳保活机制</li>
+        <li>新增：自定义远程文件名</li>
     </ul>
 
     <b>1.0.0</b>
     <ul>
         <li>初始版本</li>
-        <li>SSH 连接管理</li>
-        <li>终端功能</li>
-        <li>文件上传</li>
     </ul>
     ]]></change-notes>
 

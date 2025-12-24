@@ -32,7 +32,7 @@ class MainView(
     private lateinit var treeModel: DefaultTreeModel
     private val rootNode = DefaultMutableTreeNode()
 
-    private val terminalTabs = com.intellij.ui.components.JBTabbedPane(JTabbedPane.TOP)
+    private val terminalTabs = DockableTabPanel(parentDisposable)
     private val leftTabs = com.intellij.ui.components.JBTabbedPane(JTabbedPane.TOP)
     private val splitPane = JBSplitter(true, 0.4f)
     private lateinit var uploadTaskPanel: UploadTaskPanel
@@ -123,6 +123,7 @@ class MainView(
     private fun showConfigContextMenu(e: MouseEvent, config: SshConfig) {
         JPopupMenu().apply {
             add(createMenuItem("打开终端", AllIcons.Debugger.Console) { openTerminal(config) })
+            add(createMenuItem("文件系统", AllIcons.Nodes.Folder) { openFileSystem(config) })
             add(createMenuItem("上传文件", AllIcons.Actions.Upload) { openUploadDialog(config) })
             addSeparator()
             add(createMenuItem("编辑", AllIcons.Actions.Edit) { editConfig(config) })
@@ -145,43 +146,17 @@ class MainView(
 
     private fun openTerminal(config: SshConfig) {
         val terminalPanel = SshTerminalPanel(parentDisposable, config, project)
-        val tabIndex = terminalTabs.tabCount
-        terminalTabs.insertTab(config.name, AllIcons.Debugger.Console, terminalPanel, config.host, tabIndex)
-        terminalTabs.selectedIndex = tabIndex
+        addTab(config.name, AllIcons.Debugger.Console, terminalPanel, config.host)
+    }
 
-        // 创建自定义Tab组件
-        val tabPanel = JPanel(BorderLayout(5, 0)).apply {
-            isOpaque = false
-            
-            // 左侧：图标和标题
-            add(JPanel(BorderLayout(3, 0)).apply {
-                isOpaque = false
-                add(JLabel(AllIcons.Debugger.Console), BorderLayout.WEST)
-                add(JLabel(config.name), BorderLayout.CENTER)
-            }, BorderLayout.CENTER)
-            
-            // 右侧：关闭按钮
-            val closeBtn = JLabel(AllIcons.Actions.Close)
-            closeBtn.toolTipText = "关闭"
-            closeBtn.addMouseListener(object : MouseAdapter() {
-                override fun mouseClicked(e: MouseEvent) {
-                    val idx = terminalTabs.indexOfComponent(terminalPanel)
-                    if (idx >= 0) {
-                        Disposer.dispose(terminalPanel)
-                        terminalTabs.removeTabAt(idx)
-                    }
-                }
-                override fun mouseEntered(e: MouseEvent) {
-                    closeBtn.icon = AllIcons.Actions.CloseHovered
-                }
-                override fun mouseExited(e: MouseEvent) {
-                    closeBtn.icon = AllIcons.Actions.Close
-                }
-            })
-            add(closeBtn, BorderLayout.EAST)
-        }
-        
-        terminalTabs.setTabComponentAt(tabIndex, tabPanel)
+    private fun openFileSystem(config: SshConfig) {
+        val fileSystemPanel = SftpFileSystemPanel(config, project)
+        Disposer.register(parentDisposable, fileSystemPanel)
+        addTab("${config.name} [文件]", AllIcons.Nodes.Folder, fileSystemPanel, config.host)
+    }
+
+    private fun addTab(title: String, icon: Icon, component: JComponent, tooltip: String) {
+        terminalTabs.addTab(title, icon, component, tooltip)
     }
 
     private fun openUploadDialog(config: SshConfig) {
@@ -281,12 +256,7 @@ class MainView(
     }
 
     override fun dispose() {
-        for (i in 0 until terminalTabs.tabCount) {
-            val component = terminalTabs.getComponentAt(i)
-            if (component is Disposable) {
-                Disposer.dispose(component)
-            }
-        }
+        Disposer.dispose(terminalTabs)
         UploadTaskManager.shutdown()
     }
 }
