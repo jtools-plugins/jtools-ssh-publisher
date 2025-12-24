@@ -125,3 +125,5 @@ build/distributions/JTools-SSH-Publisher-*.zip
 ## 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request！
+
+![微信](./images/wx.jpg)
