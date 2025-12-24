@@ -2,7 +2,6 @@ package com.lhstack.ssh.view
 
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
-import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.JBSplitter
 import java.awt.*
@@ -17,15 +16,27 @@ import javax.swing.*
 class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(BorderLayout()), Disposable {
 
     private var rootContainer: TabContainer
+    private var activeContainer: TabContainer? = null
 
     init {
         Disposer.register(parentDisposable, this)
-        rootContainer = TabContainer(this, null)
+        rootContainer = TabContainer(this)
+        activeContainer = rootContainer
         add(rootContainer, BorderLayout.CENTER)
     }
 
     fun addTab(title: String, icon: Icon, component: JComponent, tooltip: String) {
-        rootContainer.addTab(TabInfo(title, icon, component, tooltip))
+        // 添加到当前活动的容器，如果没有则添加到第一个可用容器
+        val target = activeContainer ?: findFirstLeafContainer(rootContainer) ?: rootContainer
+        target.addTab(TabInfo(title, icon, component, tooltip))
+    }
+
+    private fun findFirstLeafContainer(container: TabContainer): TabContainer? {
+        return if (container.isSplit()) {
+            findFirstLeafContainer(container.getFirstChild()!!) ?: findFirstLeafContainer(container.getSecondChild()!!)
+        } else {
+            container
+        }
     }
 
     fun getTabCount(): Int = rootContainer.getTotalTabCount()
@@ -34,40 +45,50 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
         rootContainer.dispose()
     }
 
-    internal fun setRootContainer(container: TabContainer) {
+    internal fun setActiveContainer(container: TabContainer?) {
+        activeContainer = container
+    }
+
+    internal fun replaceRoot(newRoot: TabContainer) {
         remove(rootContainer)
-        rootContainer = container
-        container.parentPanel = this
-        container.parentContainer = null
+        rootContainer = newRoot
+        newRoot.setParentPanel(this)
         add(rootContainer, BorderLayout.CENTER)
         revalidate()
         repaint()
     }
 
+    internal fun getRootContainer() = rootContainer
+
     data class TabInfo(val title: String, val icon: Icon, val component: JComponent, val tooltip: String)
 
-    class TabContainer(
-        internal var parentPanel: DockableTabPanel?,
-        internal var parentContainer: TabContainer?
-    ) : JPanel(BorderLayout()), Disposable {
+    class TabContainer(private var panel: DockableTabPanel?) : JPanel(BorderLayout()), Disposable {
 
         private val tabbedPane = JTabbedPane(JTabbedPane.TOP)
         private val tabs = mutableListOf<TabInfo>()
         private var splitPane: JBSplitter? = null
         private var firstChild: TabContainer? = null
         private var secondChild: TabContainer? = null
+        private var parentContainer: TabContainer? = null
         private var dragIndex = -1
 
         init {
             add(tabbedPane, BorderLayout.CENTER)
             setupDragReorder()
-            setupTabRightClick()
+            setupTabEvents()
         }
+
+        fun isSplit() = splitPane != null
+        fun getFirstChild() = firstChild
+        fun getSecondChild() = secondChild
+        fun setParentPanel(p: DockableTabPanel) { panel = p }
 
         private fun setupDragReorder() {
             tabbedPane.addMouseListener(object : MouseAdapter() {
                 override fun mousePressed(e: MouseEvent) {
                     dragIndex = tabbedPane.indexAtLocation(e.x, e.y)
+                    // 设置为活动容器
+                    panel?.setActiveContainer(this@TabContainer)
                 }
                 override fun mouseReleased(e: MouseEvent) {
                     dragIndex = -1
@@ -91,8 +112,12 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
             })
         }
 
-        private fun setupTabRightClick() {
+        private fun setupTabEvents() {
             tabbedPane.addMouseListener(object : MouseAdapter() {
+                override fun mouseClicked(e: MouseEvent) {
+                    // 点击Tab时设置为活动容器
+                    panel?.setActiveContainer(this@TabContainer)
+                }
                 override fun mousePressed(e: MouseEvent) = handlePopup(e)
                 override fun mouseReleased(e: MouseEvent) = handlePopup(e)
                 private fun handlePopup(e: MouseEvent) {
@@ -103,6 +128,11 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
                     showTabContextMenu(e, tabIndex)
                 }
             })
+
+            // Tab切换时设置活动容器
+            tabbedPane.addChangeListener {
+                panel?.setActiveContainer(this@TabContainer)
+            }
         }
 
         private fun showTabContextMenu(e: MouseEvent, tabIndex: Int) {
@@ -126,6 +156,14 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
                     addActionListener { splitDown(tabIndex) }
                     isEnabled = tabs.size > 1
                 })
+                
+                // 如果有父容器（说明已经分屏），显示取消分屏选项
+                if (parentContainer != null) {
+                    addSeparator()
+                    add(JMenuItem("取消分屏", AllIcons.Actions.Cancel).apply {
+                        addActionListener { unsplit() }
+                    })
+                }
             }.show(e.component, e.x, e.y)
         }
 
@@ -135,6 +173,7 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
             tabbedPane.addTab(tab.title, tab.icon, tab.component, tab.tooltip)
             tabbedPane.setTabComponentAt(index, createTabComponent(tab))
             tabbedPane.selectedIndex = index
+            panel?.setActiveContainer(this)
         }
 
         private fun createTabComponent(tab: TabInfo): JPanel {
@@ -176,7 +215,7 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
             val tab = tabs.removeAt(index)
             tabbedPane.removeTabAt(index)
             if (tab.component is Disposable) Disposer.dispose(tab.component)
-            if (tabs.isEmpty()) tryMergeWithParent()
+            if (tabs.isEmpty()) tryMergeWithSibling()
         }
 
         private fun closeOtherTabs(keepIndex: Int) {
@@ -191,7 +230,7 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
             tabs.forEach { if (it.component is Disposable) Disposer.dispose(it.component) }
             tabs.clear()
             tabbedPane.removeAll()
-            tryMergeWithParent()
+            tryMergeWithSibling()
         }
 
         private fun splitRight(tabIndex: Int) = split(tabIndex, false)
@@ -205,8 +244,14 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
             remove(tabbedPane)
             splitPane = JBSplitter(vertical, 0.5f).apply { dividerWidth = 3 }
 
-            firstChild = TabContainer(null, this).also { tabs.forEach { tab -> it.addTab(tab) } }
-            secondChild = TabContainer(null, this).also { it.addTab(tabToMove) }
+            firstChild = TabContainer(panel).also { child ->
+                child.parentContainer = this
+                tabs.toList().forEach { child.addTab(it) }
+            }
+            secondChild = TabContainer(panel).also { child ->
+                child.parentContainer = this
+                child.addTab(tabToMove)
+            }
 
             tabs.clear()
             tabbedPane.removeAll()
@@ -214,11 +259,56 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
             splitPane!!.firstComponent = firstChild
             splitPane!!.secondComponent = secondChild
             add(splitPane!!, BorderLayout.CENTER)
+            
+            // 设置新分出的容器为活动容器
+            panel?.setActiveContainer(secondChild)
+            
             revalidate()
             repaint()
         }
 
-        private fun tryMergeWithParent() {
+        /**
+         * 取消分屏 - 将所有Tab合并到一个容器
+         */
+        private fun unsplit() {
+            val parent = parentContainer ?: return
+            
+            // 收集兄弟容器的所有Tab
+            val sibling = if (parent.firstChild == this) parent.secondChild else parent.firstChild
+            val allTabs = mutableListOf<TabInfo>()
+            
+            collectAllTabs(this, allTabs)
+            sibling?.let { collectAllTabs(it, allTabs) }
+            
+            // 在父容器中重建
+            parent.remove(parent.splitPane)
+            parent.splitPane = null
+            parent.firstChild?.also { it.tabs.clear() }
+            parent.secondChild?.also { it.tabs.clear() }
+            parent.firstChild = null
+            parent.secondChild = null
+            
+            parent.add(parent.tabbedPane, BorderLayout.CENTER)
+            allTabs.forEach { parent.addTab(it) }
+            
+            panel?.setActiveContainer(parent)
+            parent.revalidate()
+            parent.repaint()
+        }
+
+        private fun collectAllTabs(container: TabContainer, result: MutableList<TabInfo>) {
+            if (container.isSplit()) {
+                container.firstChild?.let { collectAllTabs(it, result) }
+                container.secondChild?.let { collectAllTabs(it, result) }
+            } else {
+                result.addAll(container.tabs)
+            }
+        }
+
+        /**
+         * 当Tab全部关闭时，尝试与兄弟容器合并
+         */
+        private fun tryMergeWithSibling() {
             val parent = parentContainer ?: return
             val sibling = if (parent.firstChild == this) parent.secondChild else parent.firstChild
             sibling ?: return
@@ -228,21 +318,25 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
             parent.firstChild = null
             parent.secondChild = null
 
-            if (sibling.splitPane != null) {
+            if (sibling.isSplit()) {
+                // 兄弟是分屏的，提升兄弟的分屏结构
                 parent.splitPane = sibling.splitPane
                 parent.firstChild = sibling.firstChild?.also { it.parentContainer = parent }
                 parent.secondChild = sibling.secondChild?.also { it.parentContainer = parent }
                 parent.add(parent.splitPane!!, BorderLayout.CENTER)
             } else {
+                // 兄弟不是分屏的，合并Tab
                 sibling.tabs.forEach { parent.addTab(it) }
                 parent.add(parent.tabbedPane, BorderLayout.CENTER)
             }
 
+            panel?.setActiveContainer(if (parent.isSplit()) parent.firstChild else parent)
             parent.revalidate()
             parent.repaint()
 
-            if (parent.tabs.isEmpty() && parent.splitPane == null) {
-                parent.tryMergeWithParent()
+            // 如果父容器也空了，继续向上合并
+            if (parent.tabs.isEmpty() && !parent.isSplit()) {
+                parent.tryMergeWithSibling()
             }
         }
 
