@@ -6,7 +6,8 @@
 IntelliJ IDEA SSH 客户端插件，集成终端、文件浏览器和批量上传功能。
 
 ## ✨ 功能特性
-
+![1](./images/1.png)
+![2](./images/2.png)
 ### 🔐 SSH 连接管理
 - 支持密码和私钥两种认证方式
 - 配置分组管理，清晰组织多个服务器
@@ -120,7 +121,7 @@ build/distributions/JTools-SSH-Publisher-*.zip
 
 ## 📄 License
 
-[MIT License](LICENSE)
+[Apache2.0 License](./LICENSE)
 
 ## 🤝 贡献
 
