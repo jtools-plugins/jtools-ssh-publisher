@@ -1,22 +1,22 @@
 <idea-plugin>
     <id>com.lhstack.ssh-publisher</id>
     <name>JTools SSH Publisher</name>
-    <version>1.1.2</version>
+    <version>1.1.3</version>
     <vendor email="lhstack@foxmail.com" url="https://github.com/lhstack">lhstack</vendor>
 
     <description><![CDATA[
     <p>A powerful SSH client plugin for IntelliJ IDEA with terminal, file browser, and batch upload capabilities.</p>
 
     <p>功能强大的 SSH 客户端插件，支持终端、文件浏览器和批量上传功能。</p>
-
-    <a href="https://github.com/jtools-plugins/jtools-ssh-publisher">GitHub</a>
+    <h3>
+    <a href="https://github.com/jtools-plugins/jtools-ssh-publisher">Source Code</a> / <a href="https://github.com/jtools-plugins/jtools-ssh-publisher">源码</a>
+    </h3>
 
     <h3>Features / 功能特性</h3>
 
     <h4>SSH Connection / SSH 连接</h4>
     <ul>
         <li>Password & private key authentication / 密码和密钥认证</li>
-        <li>Group-based configuration / 配置分组管理</li>
         <li>Connection testing / 连接测试</li>
         <li>Heartbeat keep-alive / 心跳保活</li>
     </ul>
@@ -34,7 +34,11 @@
     <ul>
         <li>Remote file explorer / 远程文件浏览</li>
         <li>Upload/Download with progress / 上传下载带进度</li>
-        <li>Create folder, rename, delete / 新建、重命名、删除</li>
+        <li>Create folder & file / 新建文件夹和文件</li>
+        <li>Rename, delete / 重命名、删除</li>
+        <li><b>Double-click to edit in IDEA / 双击在 IDEA 中编辑</b></li>
+        <li><b>Auto-sync on save / 保存时自动同步到远程</b></li>
+        <li><b>IDEA Local History support / 支持本地历史记录</b></li>
         <li>File properties view / 文件属性查看</li>
         <li>Quick search / 快速搜索</li>
     </ul>
@@ -52,6 +56,15 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>1.1.3</b>
+    <ul>
+        <li>新增：双击远程文件在 IDEA 编辑器中打开编辑</li>
+        <li>新增：编辑保存后自动同步到远程服务器</li>
+        <li>新增：支持 IDEA 本地历史记录（Local History）</li>
+        <li>新增：新建文件功能</li>
+        <li>优化：删除远程文件时同步删除本地缓存</li>
+    </ul>
+
     <b>1.1.2</b>
     <ul>
         <li>新增：SFTP 文件浏览器</li>

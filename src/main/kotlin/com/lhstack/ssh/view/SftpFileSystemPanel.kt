@@ -17,6 +17,7 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.ui.JBUI
 import com.lhstack.ssh.model.SshConfig
+import com.lhstack.ssh.service.RemoteFileEditorService
 import com.lhstack.ssh.service.SshConnectionManager
 import org.apache.sshd.sftp.client.SftpClient
 import java.awt.BorderLayout
@@ -43,6 +44,7 @@ class SftpFileSystemPanel(
 
     private val connectionManager = SshConnectionManager()
     private val executor = Executors.newFixedThreadPool(2)
+    private lateinit var remoteFileEditorService: RemoteFileEditorService
 
     private val rootNode = DefaultMutableTreeNode(FileNode("/", true, 0, 0, ""))
     private val treeModel = DefaultTreeModel(rootNode)
@@ -67,6 +69,7 @@ class SftpFileSystemPanel(
     private var currentTransferFuture: java.util.concurrent.Future<*>? = null
 
     init {
+        remoteFileEditorService = RemoteFileEditorService(project, connectionManager, config)
         initToolbar()
         initContent()
         connect()
@@ -102,6 +105,10 @@ class SftpFileSystemPanel(
             })
             add(object : AnAction("新建文件夹", "在当前目录创建文件夹", AllIcons.Actions.NewFolder) {
                 override fun actionPerformed(e: AnActionEvent) = createFolder()
+                override fun getActionUpdateThread() = ActionUpdateThread.BGT
+            })
+            add(object : AnAction("新建文件", "在当前目录创建文件", AllIcons.FileTypes.Text) {
+                override fun actionPerformed(e: AnActionEvent) = createFile()
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
             add(object : AnAction("删除", "删除选中的文件或文件夹", AllIcons.Actions.GC) {
@@ -144,14 +151,19 @@ class SftpFileSystemPanel(
             cellRenderer = FileTreeRenderer()
             rowHeight = 24
 
-            // 双击进入目录
+            // 双击进入目录或打开文件编辑
             addMouseListener(object : MouseAdapter() {
                 override fun mouseClicked(e: MouseEvent) {
-                    if (e.clickCount == 2) {
-                        val node = tree.lastSelectedPathComponent as? DefaultMutableTreeNode ?: return
+                    if (e.clickCount == 2 && e.button == MouseEvent.BUTTON1) {
+                        // 通过点击位置获取节点，而不是依赖选中状态
+                        val treePath = tree.getPathForLocation(e.x, e.y) ?: return
+                        val node = treePath.lastPathComponent as? DefaultMutableTreeNode ?: return
                         val fileNode = node.userObject as? FileNode ?: return
                         if (fileNode.isDirectory) {
                             navigateTo(fileNode.path)
+                        } else {
+                            // 双击文件，在编辑器中打开
+                            openFileInEditor(fileNode)
                         }
                     }
                 }
@@ -526,6 +538,25 @@ class SftpFileSystemPanel(
         }
     }
 
+    private fun createFile() {
+        val name = Messages.showInputDialog(project, "文件名称:", "新建文件", null) ?: return
+        if (name.isBlank()) return
+
+        executor.submit {
+            try {
+                val sftp = connectionManager.getSftpClient()
+                val remotePath = "$currentPath/$name".replace("//", "/")
+                // 创建空文件
+                sftp.write(remotePath).use { }
+                SwingUtilities.invokeLater { refresh() }
+            } catch (e: Exception) {
+                SwingUtilities.invokeLater {
+                    Messages.showErrorDialog(project, "创建失败: ${e.message}", "错误")
+                }
+            }
+        }
+    }
+
     private fun deleteSelected() {
         val node = tree.lastSelectedPathComponent as? DefaultMutableTreeNode ?: return
         val fileNode = node.userObject as? FileNode ?: return
@@ -536,6 +567,12 @@ class SftpFileSystemPanel(
             try {
                 val sftp = connectionManager.getSftpClient()
                 if (fileNode.isDirectory) sftp.rmdir(fileNode.path) else sftp.remove(fileNode.path)
+                
+                // 删除本地缓存文件
+                if (!fileNode.isDirectory) {
+                    remoteFileEditorService.deleteLocalCache(fileNode.path)
+                }
+                
                 SwingUtilities.invokeLater {
                     (node.parent as? DefaultMutableTreeNode)?.let {
                         it.remove(node)
@@ -566,6 +603,9 @@ class SftpFileSystemPanel(
                 addSeparator()
             }
             if (fileNode != null && !fileNode.isDirectory) {
+                add(JMenuItem("编辑", AllIcons.Actions.Edit).apply {
+                    addActionListener { openFileInEditor(fileNode) }
+                })
                 add(JMenuItem("下载", AllIcons.Actions.Download).apply {
                     addActionListener { downloadSelected() }
                 })
@@ -629,6 +669,44 @@ class SftpFileSystemPanel(
         """.trimIndent(), "属性")
     }
 
+    /**
+     * 在 IDEA 编辑器中打开远程文件
+     */
+    private fun openFileInEditor(fileNode: FileNode) {
+        if (fileNode.isDirectory) return
+        
+        // 检查文件大小，超过 10MB 提示
+        if (fileNode.size > 10 * 1024 * 1024) {
+            val result = Messages.showYesNoDialog(
+                project,
+                "文件较大 (${formatSize(fileNode.size)})，打开可能需要较长时间，是否继续？",
+                "文件较大",
+                Messages.getWarningIcon()
+            )
+            if (result != Messages.YES) return
+        }
+        
+        statusLabel.text = "正在打开: ${fileNode.name}"
+        statusLabel.icon = AllIcons.Process.Step_1
+        
+        remoteFileEditorService.openRemoteFile(fileNode.path, fileNode.name) { error ->
+            statusLabel.text = error
+            statusLabel.icon = AllIcons.General.Error
+            Messages.showErrorDialog(project, error, "打开文件失败")
+        }
+        
+        // 延迟恢复状态
+        executor.submit {
+            Thread.sleep(1000)
+            SwingUtilities.invokeLater {
+                if (statusLabel.text.startsWith("正在打开")) {
+                    statusLabel.text = "已连接"
+                    statusLabel.icon = AllIcons.General.InspectionsOK
+                }
+            }
+        }
+    }
+
     private fun showProgress(show: Boolean, msg: String) {
         progressBar.isVisible = show
         progressBar.value = 0
@@ -652,6 +730,7 @@ class SftpFileSystemPanel(
 
     override fun dispose() {
         executor.shutdownNow()
+        remoteFileEditorService.dispose()
         connectionManager.close()
     }
 }
