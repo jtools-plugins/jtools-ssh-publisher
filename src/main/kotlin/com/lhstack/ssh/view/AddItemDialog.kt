@@ -28,6 +28,11 @@ import java.awt.GridBagLayout
 import javax.swing.*
 import javax.swing.table.AbstractTableModel
 
+import com.intellij.openapi.fileChooser.FileChooser
+import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
+import java.io.File
+import java.util.Base64
+
 class AddItemDialog(
     private val project: Project,
     private val existingConfig: SshConfig? = null,
@@ -44,9 +49,21 @@ class AddItemDialog(
     private val privateKeyArea = JBTextArea(existingConfig?.privateKey ?: "", 4, 30)
     private val passphraseField = JBPasswordField().apply { text = existingConfig?.passphrase ?: "" }
     private val remoteDirField = JBTextField(existingConfig?.remoteDir ?: "/tmp")
+    private val useLocalKeyCheckbox = JCheckBox("使用本地密钥 (~/.ssh/id_rsa)").apply {
+        isSelected = existingConfig?.useLocalKey ?: false
+        toolTipText = if (SshConfig.hasLocalKey()) "本地密钥存在" else "本地密钥不存在 (警告)"
+        if (!SshConfig.hasLocalKey()) {
+            foreground = java.awt.Color.RED
+        }
+    }
 
-    private val authTabs = JBTabbedPane()
     private var currentAuthType = existingConfig?.authType ?: SshConfig.AuthType.PASSWORD
+    
+    // 认证面板容器
+    private lateinit var authContainer: JPanel
+    private lateinit var passwordPanel: JPanel
+    private lateinit var keyPanel: JPanel
+    private lateinit var mainPanel: JPanel
 
     private val preScriptsTableModel = ScriptTableModel()
     private val postScriptsTableModel = ScriptTableModel()
@@ -77,7 +94,7 @@ class AddItemDialog(
     }
 
     override fun createCenterPanel(): JComponent {
-        val mainPanel = JPanel(GridBagLayout())
+        mainPanel = JPanel(GridBagLayout())
         val gbc = GridBagConstraints().apply {
             fill = GridBagConstraints.HORIZONTAL
             anchor = GridBagConstraints.NORTHWEST
@@ -115,66 +132,51 @@ class AddItemDialog(
         gbc.gridx = 1; gbc.weightx = 1.0
         mainPanel.add(remoteDirField, gbc)
 
-        // 认证方式Tab
+        // 用户名（公共字段，放在认证面板外面）
+        row++
+        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0; gbc.gridwidth = 1
+        mainPanel.add(JBLabel("用户名:"), gbc)
+        gbc.gridx = 1; gbc.weightx = 1.0
+        mainPanel.add(usernameField, gbc)
+
+        // 认证方式选择按钮
         row++
         gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 2; gbc.weightx = 1.0
-        gbc.fill = GridBagConstraints.BOTH
-
-        val passwordPanel = JPanel(GridBagLayout()).apply {
-            val g = GridBagConstraints().apply {
-                fill = GridBagConstraints.HORIZONTAL
-                insets = JBUI.insets(3)
+        val authTypePanel = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0)).apply {
+            border = JBUI.Borders.empty(5, 0)
+            val buttonGroup = ButtonGroup()
+            val passwordRadio = JRadioButton("密码认证").apply {
+                isSelected = currentAuthType == SshConfig.AuthType.PASSWORD
+                addActionListener { switchAuthType(SshConfig.AuthType.PASSWORD) }
             }
-            g.gridx = 0; g.gridy = 0; g.weightx = 0.0
-            add(JBLabel("用户名:"), g)
-            g.gridx = 1; g.weightx = 1.0
-            add(usernameField, g)
-
-            g.gridx = 0; g.gridy = 1; g.weightx = 0.0
-            add(JBLabel("密码:"), g)
-            g.gridx = 1; g.weightx = 1.0
-            add(passwordField, g)
-        }
-
-        val keyPanel = JPanel(GridBagLayout()).apply {
-            val g = GridBagConstraints().apply {
-                fill = GridBagConstraints.HORIZONTAL
-                insets = JBUI.insets(3)
+            val keyRadio = JRadioButton("密钥认证").apply {
+                isSelected = currentAuthType == SshConfig.AuthType.KEY
+                addActionListener { switchAuthType(SshConfig.AuthType.KEY) }
             }
-            g.gridx = 0; g.gridy = 0; g.weightx = 0.0
-            add(JBLabel("用户名:"), g)
-            g.gridx = 1; g.weightx = 1.0
-            val keyUsernameField = JBTextField(existingConfig?.username ?: "root")
-            keyUsernameField.document.addDocumentListener(object : javax.swing.event.DocumentListener {
-                override fun insertUpdate(e: javax.swing.event.DocumentEvent) = sync()
-                override fun removeUpdate(e: javax.swing.event.DocumentEvent) = sync()
-                override fun changedUpdate(e: javax.swing.event.DocumentEvent) = sync()
-                private fun sync() { if (authTabs.selectedIndex == 1) usernameField.text = keyUsernameField.text }
-            })
-            add(keyUsernameField, g)
-
-            g.gridx = 0; g.gridy = 1; g.weightx = 0.0; g.anchor = GridBagConstraints.NORTHWEST
-            add(JBLabel("私钥:"), g)
-            g.gridx = 1; g.weightx = 1.0; g.fill = GridBagConstraints.BOTH; g.weighty = 1.0
-            add(JBScrollPane(privateKeyArea).apply { preferredSize = Dimension(300, 80) }, g)
-
-            g.gridx = 0; g.gridy = 2; g.weightx = 0.0; g.weighty = 0.0; g.fill = GridBagConstraints.HORIZONTAL
-            add(JBLabel("私钥密码:"), g)
-            g.gridx = 1; g.weightx = 1.0
-            add(passphraseField, g)
+            buttonGroup.add(passwordRadio)
+            buttonGroup.add(keyRadio)
+            add(passwordRadio)
+            add(Box.createHorizontalStrut(20))
+            add(keyRadio)
         }
+        mainPanel.add(authTypePanel, gbc)
 
-        authTabs.addTab("密码认证", passwordPanel)
-        authTabs.addTab("密钥认证", keyPanel)
-        authTabs.selectedIndex = if (currentAuthType == SshConfig.AuthType.PASSWORD) 0 else 1
-        authTabs.addChangeListener {
-            currentAuthType = if (authTabs.selectedIndex == 0) SshConfig.AuthType.PASSWORD else SshConfig.AuthType.KEY
+        // 创建认证面板
+        passwordPanel = createPasswordPanel()
+        keyPanel = createKeyPanel()
+        
+        // 认证面板容器（动态切换）
+        row++
+        gbc.gridy = row; gbc.gridwidth = 2
+        authContainer = JPanel(BorderLayout()).apply {
+            border = JBUI.Borders.customLine(JBUI.CurrentTheme.CustomFrameDecorations.separatorForeground(), 1)
         }
-        mainPanel.add(authTabs, gbc)
+        updateAuthPanel()
+        mainPanel.add(authContainer, gbc)
 
         // 脚本Tab
         row++
-        gbc.gridy = row; gbc.weighty = 1.0
+        gbc.gridy = row; gbc.weighty = 1.0; gbc.fill = GridBagConstraints.BOTH
         val scriptTabs = JBTabbedPane().apply {
             addTab("前置脚本", createScriptPanel(preScriptsTable, preScriptsTableModel, ScriptConfig.ScriptType.PRE))
             addTab("后置脚本", createScriptPanel(postScriptsTable, postScriptsTableModel, ScriptConfig.ScriptType.POST))
@@ -191,9 +193,156 @@ class AddItemDialog(
         }, gbc)
 
         return JBScrollPane(mainPanel).apply {
-            preferredSize = Dimension(620, 720)
+            preferredSize = Dimension(620, 750)
             border = JBUI.Borders.empty(5)
         }
+    }
+    
+    /**
+     * 创建密码认证面板（紧凑布局，只有密码字段）
+     */
+    private fun createPasswordPanel(): JPanel {
+        return JPanel(GridBagLayout()).apply {
+            border = JBUI.Borders.empty(8)
+            val g = GridBagConstraints().apply {
+                fill = GridBagConstraints.HORIZONTAL
+                insets = JBUI.insets(4)
+                anchor = GridBagConstraints.WEST
+            }
+            g.gridx = 0; g.gridy = 0; g.weightx = 0.0
+            add(JBLabel("密码:"), g)
+            g.gridx = 1; g.weightx = 1.0
+            add(passwordField, g)
+        }
+    }
+    
+    /**
+     * 创建密钥认证面板（完整布局）
+     */
+    private fun createKeyPanel(): JPanel {
+        return JPanel(GridBagLayout()).apply {
+            border = JBUI.Borders.empty(8)
+            val g = GridBagConstraints().apply {
+                fill = GridBagConstraints.HORIZONTAL
+                insets = JBUI.insets(4)
+                anchor = GridBagConstraints.WEST
+            }
+            
+            // 使用本地密钥选项（占据整行）
+            g.gridx = 0; g.gridy = 0; g.gridwidth = 2; g.weightx = 1.0
+            add(useLocalKeyCheckbox, g)
+
+            // 私钥标签和选择按钮在同一行
+            g.gridx = 0; g.gridy = 1; g.gridwidth = 1; g.weightx = 0.0
+            g.anchor = GridBagConstraints.WEST
+            add(JBLabel("私钥:"), g)
+            g.gridx = 1; g.weightx = 1.0
+            add(JButton("选择密钥文件...").apply {
+                icon = AllIcons.Actions.MenuOpen
+                toolTipText = "从文件系统选择私钥文件"
+                addActionListener { selectKeyFile() }
+            }, g)
+
+            // 私钥内容区域（占据整行）
+            g.gridx = 0; g.gridy = 2; g.gridwidth = 2; g.weightx = 1.0
+            g.fill = GridBagConstraints.BOTH; g.weighty = 1.0
+            add(JBScrollPane(privateKeyArea).apply { 
+                preferredSize = Dimension(300, 100)
+                minimumSize = Dimension(200, 80)
+            }, g)
+
+            // 私钥密码
+            g.gridx = 0; g.gridy = 3; g.gridwidth = 1; g.weightx = 0.0
+            g.weighty = 0.0; g.fill = GridBagConstraints.HORIZONTAL
+            g.anchor = GridBagConstraints.WEST
+            add(JBLabel("私钥密码:"), g)
+            g.gridx = 1; g.weightx = 1.0
+            add(passphraseField, g)
+            
+            // 监听使用本地密钥选项变化
+            useLocalKeyCheckbox.addActionListener {
+                privateKeyArea.isEnabled = !useLocalKeyCheckbox.isSelected
+                if (useLocalKeyCheckbox.isSelected) {
+                    privateKeyArea.text = "(将使用本地密钥 ~/.ssh/id_rsa)"
+                    privateKeyArea.foreground = java.awt.Color.GRAY
+                } else {
+                    if (privateKeyArea.text == "(将使用本地密钥 ~/.ssh/id_rsa)") {
+                        privateKeyArea.text = ""
+                    }
+                    privateKeyArea.foreground = null
+                }
+            }
+            
+            // 初始化状态
+            if (useLocalKeyCheckbox.isSelected && privateKeyArea.text.isBlank()) {
+                privateKeyArea.text = "(将使用本地密钥 ~/.ssh/id_rsa)"
+                privateKeyArea.foreground = java.awt.Color.GRAY
+                privateKeyArea.isEnabled = false
+            }
+        }
+    }
+    
+    /**
+     * 选择密钥文件
+     */
+    private fun selectKeyFile() {
+        val descriptor = FileChooserDescriptorFactory.createSingleFileDescriptor()
+        descriptor.title = "选择私钥文件"
+        descriptor.description = "选择 SSH 私钥文件（支持 PEM 格式和二进制格式）"
+        
+        FileChooser.chooseFile(descriptor, project, null)?.let { vf ->
+            try {
+                val file = File(vf.path)
+                val content = file.readBytes()
+                
+                // 检查是否为 PEM 格式（文本格式，以 -----BEGIN 开头）
+                val textContent = String(content, Charsets.UTF_8)
+                if (textContent.trimStart().startsWith("-----BEGIN")) {
+                    // PEM 格式，直接使用文本内容
+                    privateKeyArea.text = textContent
+                    privateKeyArea.foreground = null
+                    useLocalKeyCheckbox.isSelected = false
+                    privateKeyArea.isEnabled = true
+                    Messages.showInfoMessage(project, "已加载 PEM 格式密钥文件", "成功")
+                } else {
+                    // 二进制格式，转换为 Base64
+                    val base64Content = Base64.getEncoder().encodeToString(content)
+                    privateKeyArea.text = base64Content
+                    privateKeyArea.foreground = null
+                    useLocalKeyCheckbox.isSelected = false
+                    privateKeyArea.isEnabled = true
+                    Messages.showInfoMessage(project, "已加载二进制密钥文件（已转换为 Base64）", "成功")
+                }
+            } catch (e: Exception) {
+                Messages.showErrorDialog(project, "读取密钥文件失败: ${e.message}", "错误")
+            }
+        }
+    }
+    
+    /**
+     * 切换认证类型
+     */
+    private fun switchAuthType(authType: SshConfig.AuthType) {
+        currentAuthType = authType
+        updateAuthPanel()
+    }
+    
+    /**
+     * 更新认证面板显示
+     */
+    private fun updateAuthPanel() {
+        authContainer.removeAll()
+        if (currentAuthType == SshConfig.AuthType.PASSWORD) {
+            authContainer.add(passwordPanel, BorderLayout.CENTER)
+        } else {
+            authContainer.add(keyPanel, BorderLayout.CENTER)
+        }
+        authContainer.revalidate()
+        authContainer.repaint()
+        
+        // 触发整个对话框重新布局
+        mainPanel.revalidate()
+        mainPanel.repaint()
     }
 
     private fun createScriptPanel(table: JBTable, model: ScriptTableModel, scriptType: ScriptConfig.ScriptType): JComponent {
@@ -233,7 +382,7 @@ class AddItemDialog(
 
     private fun buildConfig(): SshConfig {
         return SshConfig(
-            id = existingConfig?.id ?: java.util.UUID.randomUUID().toString().replace("-",""),
+            id = existingConfig?.id ?: java.util.UUID.randomUUID().toString(),
             group = (groupCombo.selectedItem as? String)?.trim() ?: "默认",
             name = nameField.text.trim(),
             host = hostField.text.trim(),
@@ -241,9 +390,12 @@ class AddItemDialog(
             username = usernameField.text.trim(),
             authType = currentAuthType,
             password = String(passwordField.password),
-            privateKey = privateKeyArea.text,
+            privateKey = if (useLocalKeyCheckbox.isSelected) "" else privateKeyArea.text.let {
+                if (it == "(将使用本地密钥 ~/.ssh/id_rsa)") "" else it
+            },
             passphrase = String(passphraseField.password),
-            remoteDir = remoteDirField.text.trim()
+            remoteDir = remoteDirField.text.trim(),
+            useLocalKey = useLocalKeyCheckbox.isSelected
         )
     }
 

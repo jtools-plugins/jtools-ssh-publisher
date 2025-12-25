@@ -5,6 +5,7 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.terminal.JBTerminalWidget
+import com.intellij.ui.components.JBScrollBar
 import com.jediterm.terminal.Questioner
 import com.jediterm.terminal.TtyConnector
 import com.jediterm.terminal.ui.JediTermWidget
@@ -14,6 +15,7 @@ import org.apache.sshd.client.channel.ChannelShell
 import org.apache.sshd.client.channel.ClientChannelEvent
 import org.jetbrains.plugins.terminal.JBTerminalSystemSettingsProvider
 import org.jetbrains.plugins.terminal.ShellTerminalWidget
+
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
@@ -41,6 +43,9 @@ class SshTerminalPanel(
     private var label = JLabel("正在连接 ${config.username}@${config.host}:${config.port}...", SwingConstants.CENTER)
     private var statusLabel = JLabel()
     private var reconnectBtn = JButton("重新连接", AllIcons.Actions.Refresh)
+    
+    // 系统监控状态栏
+    private var systemMonitorBar: SystemMonitorBar? = null
 
     // 心跳保活
     private val heartbeatExecutor = Executors.newSingleThreadScheduledExecutor()
@@ -87,12 +92,18 @@ class SshTerminalPanel(
 
                 SwingUtilities.invokeLater {
                     try {
-                        termWidget = ShellTerminalWidget(project, JBTerminalSystemSettingsProvider(), parentDisposable).apply {
+                        termWidget = ShellTerminalWidget(project, JBTerminalSystemSettingsProvider(),parentDisposable).apply {
                             ttyConnector = connector
                             preferredSize = Dimension(800, 600)
                         }
                         removeAll()
                         add(termWidget, BorderLayout.CENTER)
+                        
+                        // 添加系统监控状态栏
+                        systemMonitorBar = SystemMonitorBar(connectionManager)
+                        add(systemMonitorBar, BorderLayout.SOUTH)
+                        systemMonitorBar?.start()
+                        
                         revalidate()
                         repaint()
                         termWidget?.start()
@@ -221,6 +232,13 @@ class SshTerminalPanel(
                         }
                         removeAll()
                         add(termWidget, BorderLayout.CENTER)
+                        
+                        // 重新创建系统监控状态栏
+                        systemMonitorBar?.dispose()
+                        systemMonitorBar = SystemMonitorBar(connectionManager)
+                        add(systemMonitorBar, BorderLayout.SOUTH)
+                        systemMonitorBar?.start()
+                        
                         revalidate()
                         repaint()
                         termWidget?.start()
@@ -277,6 +295,7 @@ class SshTerminalPanel(
         running = false
         stopHeartbeat()
         heartbeatExecutor.shutdownNow()
+        systemMonitorBar?.dispose()
         try {
             termWidget?.stop()
             shellChannel?.close()

@@ -1,5 +1,6 @@
 package com.lhstack.ssh.model
 
+import java.io.File
 import java.io.Serializable
 import java.util.UUID
 
@@ -17,10 +18,39 @@ data class SshConfig(
     var password: String = "",
     var privateKey: String = "",
     var passphrase: String = "",
-    var remoteDir: String = "/tmp"
+    var remoteDir: String = "/tmp",
+    var useLocalKey: Boolean = false  // 是否使用本地密钥（~/.ssh/id_rsa）
 ) : Serializable {
     enum class AuthType {
         PASSWORD, KEY
+    }
+    
+    companion object {
+        /**
+         * 获取本地默认私钥路径
+         */
+        fun getLocalKeyPath(): File {
+            return File(System.getProperty("user.home"), ".ssh/id_rsa")
+        }
+        
+        /**
+         * 读取本地默认私钥内容
+         */
+        fun readLocalKey(): String? {
+            val keyFile = getLocalKeyPath()
+            return if (keyFile.exists() && keyFile.isFile) {
+                keyFile.readText()
+            } else {
+                null
+            }
+        }
+        
+        /**
+         * 检查本地密钥是否存在
+         */
+        fun hasLocalKey(): Boolean {
+            return getLocalKeyPath().exists()
+        }
     }
 }
 
