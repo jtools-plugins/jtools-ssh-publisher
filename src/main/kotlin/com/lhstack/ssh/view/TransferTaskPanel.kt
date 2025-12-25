@@ -7,36 +7,35 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
-import com.lhstack.ssh.model.UploadTask
-import com.lhstack.ssh.service.UploadTaskManager
+import com.lhstack.ssh.model.TransferTask
+import com.lhstack.ssh.service.TransferTaskManager
 import java.awt.BorderLayout
-import java.awt.Color
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.text.SimpleDateFormat
 import javax.swing.*
 
 /**
- * 上传任务管理面板
+ * 传输任务管理面板（上传/下载）
  */
-class UploadTaskPanel : JPanel(BorderLayout()), Disposable, UploadTaskManager.TaskListener {
+class TransferTaskPanel : JPanel(BorderLayout()), Disposable, TransferTaskManager.TaskListener {
 
     private val taskListPanel = JPanel().apply {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
     }
     private val taskPanels = mutableMapOf<String, TaskItemPanel>()
-    private val emptyLabel = JBLabel("暂无上传任务", SwingConstants.CENTER)
+    private val emptyLabel = JBLabel("暂无传输任务", SwingConstants.CENTER)
 
     init {
-        UploadTaskManager.addListener(this)
+        TransferTaskManager.addListener(this)
 
         // 工具栏
         val toolbar = JPanel(FlowLayout(FlowLayout.LEFT, 5, 5)).apply {
             add(JButton("清除已完成", AllIcons.Actions.GC).apply {
-                addActionListener { UploadTaskManager.clearCompletedTasks() }
+                addActionListener { TransferTaskManager.clearCompletedTasks() }
             })
             add(JButton("全部停止", AllIcons.Actions.Suspend).apply {
-                addActionListener { UploadTaskManager.stopAllTasks() }
+                addActionListener { TransferTaskManager.stopAllTasks() }
             })
         }
 
@@ -50,7 +49,7 @@ class UploadTaskPanel : JPanel(BorderLayout()), Disposable, UploadTaskManager.Ta
         taskListPanel.removeAll()
         taskPanels.clear()
 
-        val tasks = UploadTaskManager.getTasks()
+        val tasks = TransferTaskManager.getTasks()
         if (tasks.isEmpty()) {
             taskListPanel.add(emptyLabel)
         } else {
@@ -64,7 +63,7 @@ class UploadTaskPanel : JPanel(BorderLayout()), Disposable, UploadTaskManager.Ta
         taskListPanel.repaint()
     }
 
-    override fun onTaskAdded(task: UploadTask) {
+    override fun onTaskAdded(task: TransferTask) {
         taskListPanel.remove(emptyLabel)
         val panel = TaskItemPanel(task)
         taskPanels[task.id] = panel
@@ -73,11 +72,11 @@ class UploadTaskPanel : JPanel(BorderLayout()), Disposable, UploadTaskManager.Ta
         taskListPanel.repaint()
     }
 
-    override fun onTaskUpdated(task: UploadTask) {
+    override fun onTaskUpdated(task: TransferTask) {
         taskPanels[task.id]?.updateTask(task)
     }
 
-    override fun onTaskRemoved(task: UploadTask) {
+    override fun onTaskRemoved(task: TransferTask) {
         taskPanels.remove(task.id)?.let { taskListPanel.remove(it) }
         if (taskPanels.isEmpty()) {
             taskListPanel.add(emptyLabel)
@@ -87,15 +86,17 @@ class UploadTaskPanel : JPanel(BorderLayout()), Disposable, UploadTaskManager.Ta
     }
 
     override fun dispose() {
-        UploadTaskManager.removeListener(this)
+        TransferTaskManager.removeListener(this)
     }
+
 
     /**
      * 单个任务项面板
      */
-    private inner class TaskItemPanel(private var task: UploadTask) : JPanel(BorderLayout(5, 5)) {
+    private inner class TaskItemPanel(private var task: TransferTask) : JPanel(BorderLayout(5, 5)) {
 
         private val statusIcon = JLabel()
+        private val typeIcon = JLabel()
         private val nameLabel = JBLabel()
         private val serverLabel = JBLabel()
         private val progressBar = JProgressBar(0, 100)
@@ -103,7 +104,7 @@ class UploadTaskPanel : JPanel(BorderLayout()), Disposable, UploadTaskManager.Ta
         private val timeLabel = JBLabel()
         
         private val retryBtn = JLabel(AllIcons.Actions.Refresh).apply {
-            toolTipText = "重新上传"
+            toolTipText = "重试"
             cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
         }
         private val stopBtn = JLabel(AllIcons.Actions.Suspend).apply {
@@ -128,9 +129,12 @@ class UploadTaskPanel : JPanel(BorderLayout()), Disposable, UploadTaskManager.Ta
             )
             maximumSize = Dimension(Int.MAX_VALUE, 80)
 
-            // 顶部：状态图标 + 文件名 + 服务器 + 时间
+            // 顶部：类型图标 + 状态图标 + 文件名 + 服务器 + 时间
             val topPanel = JPanel(BorderLayout(5, 0)).apply {
-                add(statusIcon, BorderLayout.WEST)
+                add(JPanel(FlowLayout(FlowLayout.LEFT, 3, 0)).apply {
+                    add(typeIcon)
+                    add(statusIcon)
+                }, BorderLayout.WEST)
                 add(JPanel(BorderLayout()).apply {
                     add(nameLabel, BorderLayout.WEST)
                     add(JPanel(FlowLayout(FlowLayout.RIGHT, 10, 0)).apply {
@@ -157,12 +161,12 @@ class UploadTaskPanel : JPanel(BorderLayout()), Disposable, UploadTaskManager.Ta
             // 绑定事件
             retryBtn.addMouseListener(object : java.awt.event.MouseAdapter() {
                 override fun mouseClicked(e: java.awt.event.MouseEvent) {
-                    if (retryBtn.isEnabled) UploadTaskManager.retryTask(task)
+                    if (retryBtn.isEnabled) TransferTaskManager.retryTask(task)
                 }
             })
             stopBtn.addMouseListener(object : java.awt.event.MouseAdapter() {
                 override fun mouseClicked(e: java.awt.event.MouseEvent) {
-                    if (stopBtn.isEnabled) UploadTaskManager.stopTask(task)
+                    if (stopBtn.isEnabled) TransferTaskManager.stopTask(task)
                 }
             })
             detailBtn.addMouseListener(object : java.awt.event.MouseAdapter() {
@@ -172,7 +176,7 @@ class UploadTaskPanel : JPanel(BorderLayout()), Disposable, UploadTaskManager.Ta
             })
             deleteBtn.addMouseListener(object : java.awt.event.MouseAdapter() {
                 override fun mouseClicked(e: java.awt.event.MouseEvent) {
-                    UploadTaskManager.removeTask(task)
+                    TransferTaskManager.removeTask(task)
                 }
             })
 
@@ -189,11 +193,21 @@ class UploadTaskPanel : JPanel(BorderLayout()), Disposable, UploadTaskManager.Ta
         }
 
         private fun showDetailDialog() {
-            TaskDetailDialog(task).show()
+            TransferTaskDetailDialog(task).show()
         }
 
-        fun updateTask(task: UploadTask) {
+        fun updateTask(task: TransferTask) {
             this.task = task
+
+            // 类型图标
+            typeIcon.icon = when (task.type) {
+                TransferTask.TransferType.UPLOAD -> AllIcons.Actions.Upload
+                TransferTask.TransferType.DOWNLOAD -> AllIcons.Actions.Download
+            }
+            typeIcon.toolTipText = when (task.type) {
+                TransferTask.TransferType.UPLOAD -> "上传"
+                TransferTask.TransferType.DOWNLOAD -> "下载"
+            }
 
             nameLabel.text = task.localFile.name
             serverLabel.text = "${task.config.name} (${task.config.host})"
@@ -202,17 +216,17 @@ class UploadTaskPanel : JPanel(BorderLayout()), Disposable, UploadTaskManager.Ta
             timeLabel.text = dateFormat.format(task.createTime)
 
             statusIcon.icon = when (task.status) {
-                UploadTask.TaskStatus.PENDING -> AllIcons.Process.Step_1
-                UploadTask.TaskStatus.RUNNING -> AllIcons.Process.Step_4
-                UploadTask.TaskStatus.SUCCESS -> AllIcons.General.InspectionsOK
-                UploadTask.TaskStatus.FAILED -> AllIcons.General.Error
-                UploadTask.TaskStatus.STOPPED -> AllIcons.Actions.Suspend
+                TransferTask.TaskStatus.PENDING -> AllIcons.Process.Step_1
+                TransferTask.TaskStatus.RUNNING -> AllIcons.Process.Step_4
+                TransferTask.TaskStatus.SUCCESS -> AllIcons.General.InspectionsOK
+                TransferTask.TaskStatus.FAILED -> AllIcons.General.Error
+                TransferTask.TaskStatus.STOPPED -> AllIcons.Actions.Suspend
             }
 
             // 根据状态控制按钮可用性
-            val isRunning = task.status == UploadTask.TaskStatus.RUNNING
-            val isPending = task.status == UploadTask.TaskStatus.PENDING
-            val canRetry = task.status == UploadTask.TaskStatus.FAILED || task.status == UploadTask.TaskStatus.STOPPED
+            val isRunning = task.status == TransferTask.TaskStatus.RUNNING
+            val isPending = task.status == TransferTask.TaskStatus.PENDING
+            val canRetry = task.status == TransferTask.TaskStatus.FAILED || task.status == TransferTask.TaskStatus.STOPPED
 
             retryBtn.isEnabled = canRetry
             retryBtn.isVisible = canRetry
@@ -224,13 +238,13 @@ class UploadTaskPanel : JPanel(BorderLayout()), Disposable, UploadTaskManager.Ta
 
 
 /**
- * 任务详情对话框
+ * 传输任务详情对话框
  */
-class TaskDetailDialog(private val task: UploadTask) : DialogWrapper(true) {
+class TransferTaskDetailDialog(private val task: TransferTask) : DialogWrapper(true) {
 
     init {
         title = "任务详情 - ${task.localFile.name}"
-        setSize(600, 450)
+        setSize(700, 600)
         init()
     }
 
@@ -241,6 +255,7 @@ class TaskDetailDialog(private val task: UploadTask) : DialogWrapper(true) {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             border = JBUI.Borders.empty(10)
 
+            add(createInfoRow("类型:", if (task.type == TransferTask.TransferType.UPLOAD) "上传" else "下载"))
             add(createInfoRow("文件名:", task.localFile.name))
             add(createInfoRow("本地路径:", task.localFile.absolutePath))
             add(createInfoRow("远程路径:", task.remotePath))
@@ -249,8 +264,6 @@ class TaskDetailDialog(private val task: UploadTask) : DialogWrapper(true) {
             add(createInfoRow("进度:", "${task.progress}%"))
             add(createInfoRow("消息:", task.message))
             add(createInfoRow("创建时间:", dateFormat.format(task.createTime)))
-            add(createInfoRow("前置脚本:", task.preScripts.joinToString(", ") { it.name }.ifEmpty { "无" }))
-            add(createInfoRow("后置脚本:", task.postScripts.joinToString(", ") { it.name }.ifEmpty { "无" }))
         }
 
         val logArea = JBTextArea().apply {
@@ -259,13 +272,66 @@ class TaskDetailDialog(private val task: UploadTask) : DialogWrapper(true) {
             caretPosition = 0
         }
 
+        // 脚本内容面板（仅上传任务显示）
+        val scriptPanel = if (task.type == TransferTask.TransferType.UPLOAD) {
+            com.intellij.ui.components.JBTabbedPane().apply {
+                // 前置脚本
+                if (task.preScripts.isNotEmpty() || task.tempPreScript.isNotEmpty()) {
+                    val preScriptArea = JBTextArea().apply {
+                        isEditable = false
+                        val sb = StringBuilder()
+                        task.preScripts.forEachIndexed { index, script ->
+                            if (index > 0) sb.append("\n\n")
+                            sb.append("# ===== ${script.name} =====\n")
+                            sb.append(script.content)
+                        }
+                        if (task.tempPreScript.isNotEmpty()) {
+                            if (sb.isNotEmpty()) sb.append("\n\n")
+                            sb.append("# ===== 临时前置脚本 =====\n")
+                            sb.append(task.tempPreScript)
+                        }
+                        text = sb.toString()
+                        caretPosition = 0
+                    }
+                    addTab("前置脚本", JBScrollPane(preScriptArea))
+                }
+                
+                // 后置脚本
+                if (task.postScripts.isNotEmpty() || task.tempPostScript.isNotEmpty()) {
+                    val postScriptArea = JBTextArea().apply {
+                        isEditable = false
+                        val sb = StringBuilder()
+                        task.postScripts.forEachIndexed { index, script ->
+                            if (index > 0) sb.append("\n\n")
+                            sb.append("# ===== ${script.name} =====\n")
+                            sb.append(script.content)
+                        }
+                        if (task.tempPostScript.isNotEmpty()) {
+                            if (sb.isNotEmpty()) sb.append("\n\n")
+                            sb.append("# ===== 临时后置脚本 =====\n")
+                            sb.append(task.tempPostScript)
+                        }
+                        text = sb.toString()
+                        caretPosition = 0
+                    }
+                    addTab("后置脚本", JBScrollPane(postScriptArea))
+                }
+                
+                // 执行日志
+                addTab("执行日志", JBScrollPane(logArea))
+            }
+        } else {
+            // 下载任务只显示日志
+            JPanel(BorderLayout(0, 5)).apply {
+                add(JBLabel("执行日志:"), BorderLayout.NORTH)
+                add(JBScrollPane(logArea), BorderLayout.CENTER)
+            }
+        }
+
         return JPanel(BorderLayout(0, 10)).apply {
             border = JBUI.Borders.empty(10)
             add(infoPanel, BorderLayout.NORTH)
-            add(JPanel(BorderLayout(0, 5)).apply {
-                add(JBLabel("执行日志:"), BorderLayout.NORTH)
-                add(JBScrollPane(logArea), BorderLayout.CENTER)
-            }, BorderLayout.CENTER)
+            add(scriptPanel, BorderLayout.CENTER)
         }
     }
 
