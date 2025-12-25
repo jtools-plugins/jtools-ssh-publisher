@@ -46,7 +46,8 @@ class SftpFileSystemPanel(
 
     private val connectionManager = SshConnectionManager()
     private val executor = Executors.newFixedThreadPool(2)
-    private lateinit var remoteFileEditorService: RemoteFileEditorService
+    private var remoteFileEditorService: RemoteFileEditorService =
+        RemoteFileEditorService(project, connectionManager, config)
 
     private val rootNode = DefaultMutableTreeNode(FileNode("/", true, 0, 0, ""))
     private val treeModel = DefaultTreeModel(rootNode)
@@ -63,7 +64,6 @@ class SftpFileSystemPanel(
     private var currentPath = "/"
 
     init {
-        remoteFileEditorService = RemoteFileEditorService(project, connectionManager, config)
         initToolbar()
         initContent()
         connect()
@@ -666,7 +666,7 @@ class SftpFileSystemPanel(
         statusLabel.text = "正在打开: ${fileNode.name}"
         statusLabel.icon = AllIcons.Process.Step_1
         
-        remoteFileEditorService.openRemoteFile(fileNode.path, fileNode.name) { error ->
+        remoteFileEditorService.openRemoteFile(fileNode.path) { error ->
             statusLabel.text = error
             statusLabel.icon = AllIcons.General.Error
             Messages.showErrorDialog(project, error, "打开文件失败")

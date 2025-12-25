@@ -88,7 +88,7 @@ class RemoteFileEditorService(
     /**
      * 在编辑器中打开远程文件
      */
-    fun openRemoteFile(remotePath: String, fileName: String, onError: (String) -> Unit) {
+    fun openRemoteFile(remotePath: String, onError: (String) -> Unit) {
         // 检查连接状态
         if (!connectionManager.isConnected()) {
             onError("SSH 连接不可用")
