@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.lhstack.ssh-publisher</id>
     <name>JTools SSH Publisher</name>
-    <version>1.1.4</version>
+    <version>1.1.5</version>
     <vendor email="lhstack@foxmail.com" url="https://github.com/lhstack">lhstack</vendor>
 
     <description><![CDATA[
@@ -17,6 +17,8 @@
     <h4>SSH Connection / SSH 连接</h4>
     <ul>
         <li>Password & private key authentication / 密码和密钥认证</li>
+        <li><b>Use local key (~/.ssh/id_rsa) / 使用本地默认密钥</b></li>
+        <li><b>Load key from file picker / 从文件选择器加载密钥</b></li>
         <li>Connection testing / 连接测试</li>
         <li>Heartbeat keep-alive / 心跳保活</li>
     </ul>
@@ -28,6 +30,7 @@
         <li>Chinese font support / 中文支持</li>
         <li>Tab drag reorder / Tab 拖拽排序</li>
         <li>Split view (right/down) / 分屏显示</li>
+        <li><b>System monitor bar (CPU/Memory/Disk/Process) / 系统监控状态栏</b></li>
     </ul>
 
     <h4>File Browser (SFTP) / 文件浏览器</h4>
@@ -41,6 +44,7 @@
         <li><b>Auto-reconnect on disconnect / 断线自动重连</b></li>
         <li><b>IDEA Local History support / 支持本地历史记录</b></li>
         <li><b>Download file rename detection / 下载文件重名检测</b></li>
+        <li><b>System monitor bar (CPU/Memory/Disk/Process) / 系统监控状态栏</b></li>
         <li>File properties view / 文件属性查看</li>
         <li>Quick search / 快速搜索</li>
     </ul>
@@ -67,6 +71,17 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>1.1.5</b>
+    <ul>
+        <li>新增：系统监控状态栏（SSH终端和文件系统底部显示CPU/内存/磁盘/进程数）</li>
+        <li>新增：每5秒自动刷新系统监控数据</li>
+        <li>新增：资源使用超阈值时显示警告颜色</li>
+        <li>新增：支持使用本地默认密钥（~/.ssh/id_rsa）</li>
+        <li>新增：支持从文件选择器加载任意密钥文件（PEM/二进制格式）</li>
+        <li>优化：认证方式切换时动态调整面板高度</li>
+        <li>优化：用户名字段移至公共区域，两种认证方式共享</li>
+    </ul>
+
     <b>1.1.4</b>
     <ul>
         <li>新增：传输管理（统一管理上传和下载任务）</li>

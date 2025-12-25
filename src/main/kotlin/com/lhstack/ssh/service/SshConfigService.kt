@@ -37,7 +37,8 @@ object SshConfigService {
                     password TEXT,
                     private_key TEXT,
                     passphrase TEXT,
-                    remote_dir TEXT DEFAULT '/tmp'
+                    remote_dir TEXT DEFAULT '/tmp',
+                    use_local_key INTEGER DEFAULT 0
                 )
             """.trimIndent()
             )
@@ -55,6 +56,13 @@ object SshConfigService {
                 )
             """.trimIndent()
             )
+            
+            // 迁移：添加 use_local_key 列（如果不存在）
+            try {
+                stmt.executeUpdate("ALTER TABLE ssh_config ADD COLUMN use_local_key INTEGER DEFAULT 0")
+            } catch (_: Exception) {
+                // 列已存在，忽略
+            }
         }
     }
 
@@ -75,7 +83,8 @@ object SshConfigService {
                             password = rs.getString("password") ?: "",
                             privateKey = rs.getString("private_key") ?: "",
                             passphrase = rs.getString("passphrase") ?: "",
-                            remoteDir = rs.getString("remote_dir") ?: "/tmp"
+                            remoteDir = rs.getString("remote_dir") ?: "/tmp",
+                            useLocalKey = try { rs.getInt("use_local_key") == 1 } catch (_: Exception) { false }
                         )
                     )
                 }
@@ -88,8 +97,8 @@ object SshConfigService {
         connection.prepareStatement(
             """
             INSERT INTO ssh_config (id, group_name, name, host, port, username, auth_type, 
-                password, private_key, passphrase, remote_dir)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                password, private_key, passphrase, remote_dir, use_local_key)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """.trimIndent()
         ).use { stmt ->
             stmt.setString(1, config.id)
@@ -103,6 +112,7 @@ object SshConfigService {
             stmt.setString(9, config.privateKey)
             stmt.setString(10, config.passphrase)
             stmt.setString(11, config.remoteDir)
+            stmt.setInt(12, if (config.useLocalKey) 1 else 0)
             stmt.executeUpdate()
         }
     }
@@ -111,7 +121,7 @@ object SshConfigService {
         connection.prepareStatement(
             """
             UPDATE ssh_config SET group_name=?, name=?, host=?, port=?, username=?, auth_type=?,
-                password=?, private_key=?, passphrase=?, remote_dir=?
+                password=?, private_key=?, passphrase=?, remote_dir=?, use_local_key=?
             WHERE id=?
         """.trimIndent()
         ).use { stmt ->
@@ -125,7 +135,8 @@ object SshConfigService {
             stmt.setString(8, config.privateKey)
             stmt.setString(9, config.passphrase)
             stmt.setString(10, config.remoteDir)
-            stmt.setString(11, config.id)
+            stmt.setInt(11, if (config.useLocalKey) 1 else 0)
+            stmt.setString(12, config.id)
             stmt.executeUpdate()
         }
     }
@@ -158,7 +169,8 @@ object SshConfigService {
                         password = rs.getString("password") ?: "",
                         privateKey = rs.getString("private_key") ?: "",
                         passphrase = rs.getString("passphrase") ?: "",
-                        remoteDir = rs.getString("remote_dir") ?: "/tmp"
+                        remoteDir = rs.getString("remote_dir") ?: "/tmp",
+                        useLocalKey = try { rs.getInt("use_local_key") == 1 } catch (_: Exception) { false }
                     )
                 }
             }
