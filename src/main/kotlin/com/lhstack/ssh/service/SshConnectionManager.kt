@@ -63,8 +63,21 @@ class SshConnectionManager {
                 }
 
                 SshConfig.AuthType.KEY -> {
-                    println("[SSH] 使用密钥认证")
-                    val keyPair = loadKeyPair(config.privateKey, config.passphrase)
+                    // 如果启用了使用本地密钥，优先使用本地密钥
+                    val privateKeyContent = if (config.useLocalKey && SshConfig.hasLocalKey()) {
+                        println("[SSH] 使用本地密钥认证 (~/.ssh/id_rsa)")
+                        SshConfig.readLocalKey() ?: config.privateKey
+                    } else {
+                        println("[SSH] 使用配置的密钥认证")
+                        config.privateKey
+                    }
+                    
+                    if (privateKeyContent.isBlank()) {
+                        println("[SSH] 密钥内容为空")
+                        return false
+                    }
+                    
+                    val keyPair = loadKeyPair(privateKeyContent, config.passphrase)
                     session?.addPublicKeyIdentity(keyPair)
                 }
             }
