@@ -200,13 +200,25 @@ class SftpFileSystemPanel(
                 foreground = JBUI.CurrentTheme.ContextHelp.FOREGROUND
             }, BorderLayout.EAST)
         }
+        
+        // 系统监控状态栏
+        val systemMonitorBar = SystemMonitorBar(connectionManager)
+
+        // 底部面板（状态栏 + 系统监控）
+        val bottomPanel = JPanel(BorderLayout()).apply {
+            add(statusBar, BorderLayout.NORTH)
+            add(systemMonitorBar, BorderLayout.SOUTH)
+        }
 
         val mainPanel = JPanel(BorderLayout()).apply {
             add(JBScrollPane(tree), BorderLayout.CENTER)
-            add(statusBar, BorderLayout.SOUTH)
+            add(bottomPanel, BorderLayout.SOUTH)
         }
 
         setContent(mainPanel)
+        
+        // 启动系统监控（连接成功后会自动开始获取数据）
+        systemMonitorBar.start()
     }
 
     private fun connect() {

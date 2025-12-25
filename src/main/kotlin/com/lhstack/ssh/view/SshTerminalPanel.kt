@@ -43,6 +43,9 @@ class SshTerminalPanel(
     private var label = JLabel("正在连接 ${config.username}@${config.host}:${config.port}...", SwingConstants.CENTER)
     private var statusLabel = JLabel()
     private var reconnectBtn = JButton("重新连接", AllIcons.Actions.Refresh)
+    
+    // 系统监控状态栏
+    private var systemMonitorBar: SystemMonitorBar? = null
 
     // 心跳保活
     private val heartbeatExecutor = Executors.newSingleThreadScheduledExecutor()
@@ -95,6 +98,12 @@ class SshTerminalPanel(
                         }
                         removeAll()
                         add(termWidget, BorderLayout.CENTER)
+                        
+                        // 添加系统监控状态栏
+                        systemMonitorBar = SystemMonitorBar(connectionManager)
+                        add(systemMonitorBar, BorderLayout.SOUTH)
+                        systemMonitorBar?.start()
+                        
                         revalidate()
                         repaint()
                         termWidget?.start()
@@ -223,6 +232,13 @@ class SshTerminalPanel(
                         }
                         removeAll()
                         add(termWidget, BorderLayout.CENTER)
+                        
+                        // 重新创建系统监控状态栏
+                        systemMonitorBar?.dispose()
+                        systemMonitorBar = SystemMonitorBar(connectionManager)
+                        add(systemMonitorBar, BorderLayout.SOUTH)
+                        systemMonitorBar?.start()
+                        
                         revalidate()
                         repaint()
                         termWidget?.start()
@@ -279,6 +295,7 @@ class SshTerminalPanel(
         running = false
         stopHeartbeat()
         heartbeatExecutor.shutdownNow()
+        systemMonitorBar?.dispose()
         try {
             termWidget?.stop()
             shellChannel?.close()
