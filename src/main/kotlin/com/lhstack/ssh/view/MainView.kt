@@ -15,7 +15,7 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.treeStructure.Tree
 import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.service.SshConfigService
-import com.lhstack.ssh.service.UploadTaskManager
+import com.lhstack.ssh.service.TransferTaskManager
 import java.awt.BorderLayout
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
@@ -35,26 +35,26 @@ class MainView(
     private val terminalTabs = DockableTabPanel(parentDisposable)
     private val leftTabs = com.intellij.ui.components.JBTabbedPane(JTabbedPane.TOP)
     private val splitPane = JBSplitter(true, 0.4f)
-    private lateinit var uploadTaskPanel: UploadTaskPanel
+    private lateinit var transferTaskPanel: TransferTaskPanel
 
     init {
         Disposer.register(parentDisposable, this)
         initTree()
-        initUploadTaskPanel()
+        initTransferTaskPanel()
         initActionToolbar()
         initSplitPane()
         refreshTree()
     }
 
-    private fun initUploadTaskPanel() {
-        uploadTaskPanel = UploadTaskPanel()
-        Disposer.register(parentDisposable, uploadTaskPanel)
+    private fun initTransferTaskPanel() {
+        transferTaskPanel = TransferTaskPanel()
+        Disposer.register(parentDisposable, transferTaskPanel)
     }
 
     private fun initSplitPane() {
-        // 左侧Tab：SSH连接 + 上传管理
+        // 左侧Tab：SSH连接 + 传输管理
         leftTabs.addTab("SSH连接", AllIcons.Nodes.Plugin, JBScrollPane(tree))
-        leftTabs.addTab("上传管理", AllIcons.Actions.Upload, uploadTaskPanel)
+        leftTabs.addTab("传输管理", AllIcons.Actions.Upload, transferTaskPanel)
         
         splitPane.firstComponent = leftTabs
         splitPane.secondComponent = terminalTabs
@@ -257,6 +257,6 @@ class MainView(
 
     override fun dispose() {
         Disposer.dispose(terminalTabs)
-        UploadTaskManager.shutdown()
+        TransferTaskManager.shutdown()
     }
 }
