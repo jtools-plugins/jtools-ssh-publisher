@@ -17,8 +17,10 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.ui.JBUI
 import com.lhstack.ssh.model.SshConfig
+import com.lhstack.ssh.model.TransferTask
 import com.lhstack.ssh.service.RemoteFileEditorService
 import com.lhstack.ssh.service.SshConnectionManager
+import com.lhstack.ssh.service.TransferTaskManager
 import org.apache.sshd.sftp.client.SftpClient
 import java.awt.BorderLayout
 import java.awt.event.KeyAdapter
@@ -57,16 +59,8 @@ class SftpFileSystemPanel(
         isStringPainted = true
         preferredSize = java.awt.Dimension(150, 16)
     }
-    private val cancelButton = JButton("取消").apply {
-        isVisible = false
-        addActionListener { cancelTransfer() }
-    }
 
     private var currentPath = "/"
-    
-    @Volatile
-    private var transferCancelled = false
-    private var currentTransferFuture: java.util.concurrent.Future<*>? = null
 
     init {
         remoteFileEditorService = RemoteFileEditorService(project, connectionManager, config)
@@ -202,10 +196,6 @@ class SftpFileSystemPanel(
         val statusBar = JPanel(BorderLayout(10, 0)).apply {
             border = JBUI.Borders.empty(3, 5)
             add(statusLabel, BorderLayout.WEST)
-            add(JPanel(BorderLayout(5, 0)).apply {
-                add(progressBar, BorderLayout.CENTER)
-                add(cancelButton, BorderLayout.EAST)
-            }, BorderLayout.CENTER)
             add(JBLabel("${config.name} (${config.host})").apply {
                 foreground = JBUI.CurrentTheme.ContextHelp.FOREGROUND
             }, BorderLayout.EAST)
@@ -397,61 +387,17 @@ class SftpFileSystemPanel(
         FileChooser.chooseFile(descriptor, project, null)?.let { vf ->
             val localFile = File(vf.path)
             val remotePath = "$currentPath/${localFile.name}".replace("//", "/")
-            doUpload(localFile, remotePath)
-        }
-    }
-
-    private fun doUpload(localFile: File, remotePath: String) {
-        showProgress(true, "上传: ${localFile.name}")
-        transferCancelled = false
-
-        currentTransferFuture = executor.submit {
-            val sftp = connectionManager.getSftpClient()
-            var success = false
-            try {
-                val totalSize = localFile.length()
-                var uploaded = 0L
-
-                sftp.write(remotePath).use { output ->
-                    localFile.inputStream().use { input ->
-                        val buffer = ByteArray(32768)
-                        var read: Int = 0
-                        while (!transferCancelled && input.read(buffer).also { read = it } != -1) {
-                            output.write(buffer, 0, read)
-                            uploaded += read
-                            val percent = (uploaded * 100 / totalSize).toInt()
-                            SwingUtilities.invokeLater {
-                                progressBar.value = percent
-                                progressBar.string = "$percent%"
-                            }
-                        }
-                    }
-                }
-                success = !transferCancelled
-            } catch (e: Exception) {
-                SwingUtilities.invokeLater {
-                    showProgress(false, if (transferCancelled) "上传已取消" else "上传失败")
-                    if (!transferCancelled) {
-                        Messages.showErrorDialog(project, "上传失败: ${e.message}", "错误")
-                    }
-                }
-            } finally {
-                // 在executor线程中删除未完成的文件
-                if (transferCancelled || !success) {
-                    try {
-                        sftp.remove(remotePath)
-                    } catch (_: Exception) {
-                    }
-                }
-                SwingUtilities.invokeLater {
-                    if (success) {
-                        showProgress(false, "上传完成")
-                        refresh()
-                    } else if (transferCancelled) {
-                        showProgress(false, "上传已取消")
-                    }
-                }
-            }
+            
+            // 创建上传任务并添加到传输管理器
+            val task = TransferTask(
+                type = TransferTask.TransferType.UPLOAD,
+                localFile = localFile,
+                remotePath = remotePath,
+                config = config,
+                fileSize = localFile.length()
+            )
+            TransferTaskManager.addTask(task)
+            statusLabel.text = "已添加上传任务: ${localFile.name}"
         }
     }
 
@@ -467,58 +413,78 @@ class SftpFileSystemPanel(
         descriptor.title = "选择保存目录"
         FileChooser.chooseFile(descriptor, project, null)?.let { vf ->
             val saveDir = File(vf.path)
-            val fileName = fileNode.name
-            val localFile = File(saveDir, fileName)
-            doDownload(fileNode.path, localFile, fileNode.size)
+            var fileName = fileNode.name
+            var localFile = File(saveDir, fileName)
+            
+            // 检查文件是否已存在
+            if (localFile.exists()) {
+                val options = arrayOf("覆盖", "重命名", "取消")
+                val result = Messages.showDialog(
+                    project,
+                    "文件 \"$fileName\" 已存在，请选择操作：",
+                    "文件已存在",
+                    options,
+                    1,  // 默认选择"重命名"
+                    Messages.getWarningIcon()
+                )
+                
+                when (result) {
+                    0 -> {
+                        // 覆盖：直接使用原文件名
+                    }
+                    1 -> {
+                        // 重命名：让用户输入新文件名
+                        val newName = Messages.showInputDialog(
+                            project,
+                            "请输入新的文件名：",
+                            "重命名",
+                            null,
+                            generateNewFileName(saveDir, fileName),
+                            null
+                        ) ?: return
+                        
+                        if (newName.isBlank()) return
+                        fileName = newName
+                        localFile = File(saveDir, fileName)
+                        
+                        // 再次检查新文件名是否存在
+                        if (localFile.exists()) {
+                            Messages.showErrorDialog(project, "文件 \"$fileName\" 已存在", "错误")
+                            return
+                        }
+                    }
+                    else -> return  // 取消
+                }
+            }
+            
+            // 创建下载任务并添加到传输管理器
+            val task = TransferTask(
+                type = TransferTask.TransferType.DOWNLOAD,
+                localFile = localFile,
+                remotePath = fileNode.path,
+                config = config,
+                fileSize = fileNode.size
+            )
+            TransferTaskManager.addTask(task)
+            statusLabel.text = "已添加下载任务: ${fileName}"
         }
     }
 
-    private fun doDownload(remotePath: String, localFile: File, totalSize: Long) {
-        showProgress(true, "下载: ${localFile.name}")
-        transferCancelled = false
+    /**
+     * 生成新的文件名（添加序号）
+     */
+    private fun generateNewFileName(dir: File, originalName: String): String {
+        val dotIndex = originalName.lastIndexOf('.')
+        val baseName = if (dotIndex > 0) originalName.substring(0, dotIndex) else originalName
+        val extension = if (dotIndex > 0) originalName.substring(dotIndex) else ""
         
-        currentTransferFuture = executor.submit {
-            try {
-                val sftp = connectionManager.getSftpClient()
-                var downloaded = 0L
-
-                sftp.read(remotePath).use { input ->
-                    localFile.outputStream().use { output ->
-                        val buffer = ByteArray(32768)
-                        var read: Int = 0
-                        while (!transferCancelled && input.read(buffer).also { read = it } != -1) {
-                            output.write(buffer, 0, read)
-                            downloaded += read
-                            val percent = if (totalSize > 0) (downloaded * 100 / totalSize).toInt() else 0
-                            SwingUtilities.invokeLater {
-                                progressBar.value = percent
-                                progressBar.string = "$percent%"
-                            }
-                        }
-                    }
-                }
-                
-                SwingUtilities.invokeLater {
-                    if (transferCancelled) {
-                        showProgress(false, "下载已取消")
-                        // 删除未完成的文件
-                        localFile.delete()
-                    } else {
-                        showProgress(false, "下载完成")
-                        Messages.showInfoMessage(project, "已保存到:\n${localFile.absolutePath}", "下载完成")
-                    }
-                }
-            } catch (e: Exception) {
-                SwingUtilities.invokeLater {
-                    showProgress(false, if (transferCancelled) "下载已取消" else "下载失败")
-                    if (!transferCancelled) {
-                        Messages.showErrorDialog(project, "下载失败: ${e.message}", "错误")
-                    }
-                    // 删除未完成的文件
-                    localFile.delete()
-                }
-            }
+        var counter = 1
+        var newName = "${baseName}_$counter$extension"
+        while (File(dir, newName).exists()) {
+            counter++
+            newName = "${baseName}_$counter$extension"
         }
+        return newName
     }
 
     private fun createFolder() {
@@ -636,7 +602,18 @@ class SftpFileSystemPanel(
         val descriptor = FileChooserDescriptorFactory.createSingleFileDescriptor()
         FileChooser.chooseFile(descriptor, project, null)?.let { vf ->
             val localFile = File(vf.path)
-            doUpload(localFile, "$targetDir/${localFile.name}".replace("//", "/"))
+            val remotePath = "$targetDir/${localFile.name}".replace("//", "/")
+            
+            // 创建上传任务并添加到传输管理器
+            val task = TransferTask(
+                type = TransferTask.TransferType.UPLOAD,
+                localFile = localFile,
+                remotePath = remotePath,
+                config = config,
+                fileSize = localFile.length()
+            )
+            TransferTaskManager.addTask(task)
+            statusLabel.text = "已添加上传任务: ${localFile.name}"
         }
     }
 
@@ -705,20 +682,6 @@ class SftpFileSystemPanel(
                 }
             }
         }
-    }
-
-    private fun showProgress(show: Boolean, msg: String) {
-        progressBar.isVisible = show
-        progressBar.value = 0
-        cancelButton.isVisible = show
-        statusLabel.text = msg
-        statusLabel.icon = if (show) AllIcons.Process.Step_1 else AllIcons.General.InspectionsOK
-    }
-
-    private fun cancelTransfer() {
-        transferCancelled = true
-        currentTransferFuture?.cancel(true)
-        statusLabel.text = "正在取消..."
     }
 
     private fun formatSize(bytes: Long) = when {

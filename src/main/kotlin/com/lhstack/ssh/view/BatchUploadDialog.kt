@@ -23,9 +23,9 @@ import com.intellij.util.ui.JBUI
 import com.lhstack.ssh.component.MultiLanguageTextField
 import com.lhstack.ssh.model.ScriptConfig
 import com.lhstack.ssh.model.SshConfig
-import com.lhstack.ssh.model.UploadTask
+import com.lhstack.ssh.model.TransferTask
 import com.lhstack.ssh.service.SshConfigService
-import com.lhstack.ssh.service.UploadTaskManager
+import com.lhstack.ssh.service.TransferTaskManager
 import java.awt.BorderLayout
 import java.awt.CardLayout
 import java.awt.Dimension
@@ -284,10 +284,12 @@ class BatchUploadDialog(
                 ?.map { it.script }
                 ?: emptyList()
 
-            UploadTask(
+            TransferTask(
+                type = TransferTask.TransferType.UPLOAD,
                 localFile = localFile,
                 remotePath = fullRemotePath,
                 config = config,
+                fileSize = localFile.length(),
                 preScripts = preScripts,
                 postScripts = postScripts,
                 tempPreScript = tempPreScript,
@@ -296,11 +298,11 @@ class BatchUploadDialog(
         }
 
         // 添加到任务管理器
-        UploadTaskManager.addTasks(tasks)
+        TransferTaskManager.addTasks(tasks)
 
         Messages.showInfoMessage(
             project,
-            "已添加 ${tasks.size} 个上传任务到队列，可在\"上传管理\"面板查看进度",
+            "已添加 ${tasks.size} 个上传任务到队列，可在\"传输管理\"面板查看进度",
             "提示"
         )
 
