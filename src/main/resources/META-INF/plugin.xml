@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.lhstack.ssh-publisher</id>
     <name>JTools SSH Publisher</name>
-    <version>1.1.5</version>
+    <version>1.1.6</version>
     <vendor email="lhstack@foxmail.com" url="https://github.com/lhstack">lhstack</vendor>
 
     <description><![CDATA[
@@ -29,7 +29,10 @@
         <li>IDEA theme adaptation / 适配 IDEA 主题</li>
         <li>Chinese font support / 中文支持</li>
         <li>Tab drag reorder / Tab 拖拽排序</li>
+        <li><b>Cross-container Tab drag & drop / 跨容器 Tab 拖拽移动</b></li>
         <li>Split view (right/down) / 分屏显示</li>
+        <li><b>Unlimited split nesting / 无限层级分屏</b></li>
+        <li><b>Focus-based Tab placement / 基于焦点添加新 Tab</b></li>
         <li><b>System monitor bar (CPU/Memory/Disk/Process) / 系统监控状态栏</b></li>
     </ul>
 
@@ -71,6 +74,15 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>1.1.6</b>
+    <ul>
+        <li>新增：跨分屏容器 Tab 拖拽移动</li>
+        <li>新增：跨容器拖拽支持指定位置插入</li>
+        <li>新增：拖拽时目标容器高亮提示</li>
+        <li>新增：基于焦点确定新 Tab 添加位置</li>
+        <li>修复：新建终端/文件系统未添加到焦点容器的问题</li>
+    </ul>
+
     <b>1.1.5</b>
     <ul>
         <li>新增：系统监控状态栏（SSH终端和文件系统底部显示CPU/内存/磁盘/进程数）</li>
