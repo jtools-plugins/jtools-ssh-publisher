@@ -50,5 +50,5 @@ class PluginImpl : IPlugin {
 
     override fun pluginDesc(): String = "SshPublisher"
 
-    override fun pluginVersion(): String = "1.0.5"
+    override fun pluginVersion(): String = "1.0.6"
 }
