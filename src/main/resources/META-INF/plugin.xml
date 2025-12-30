@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.lhstack.ssh-publisher</id>
     <name>JTools SSH Publisher</name>
-    <version>1.1.6</version>
+    <version>1.1.7</version>
     <vendor email="lhstack@foxmail.com" url="https://github.com/lhstack">lhstack</vendor>
 
     <description><![CDATA[
@@ -17,10 +17,12 @@
     <h4>SSH Connection / SSH 连接</h4>
     <ul>
         <li>Password & private key authentication / 密码和密钥认证</li>
-        <li><b>Use local key (~/.ssh/id_rsa) / 使用本地默认密钥</b></li>
-        <li><b>Load key from file picker / 从文件选择器加载密钥</b></li>
+        <li>Use local key (~/.ssh/id_rsa) / 使用本地默认密钥</li>
+        <li>Load key from file picker / 从文件选择器加载密钥</li>
         <li>Connection testing / 连接测试</li>
         <li>Heartbeat keep-alive / 心跳保活</li>
+        <li><b>Pre/Post scripts with list+editor UI / 前置/后置脚本（列表+编辑器方式）</b></li>
+        <li><b>Non-modal edit dialog / 非模态编辑对话框</b></li>
     </ul>
 
     <h4>Terminal / 终端</h4>
@@ -29,11 +31,11 @@
         <li>IDEA theme adaptation / 适配 IDEA 主题</li>
         <li>Chinese font support / 中文支持</li>
         <li>Tab drag reorder / Tab 拖拽排序</li>
-        <li><b>Cross-container Tab drag & drop / 跨容器 Tab 拖拽移动</b></li>
+        <li>Cross-container Tab drag & drop / 跨容器 Tab 拖拽移动</li>
         <li>Split view (right/down) / 分屏显示</li>
-        <li><b>Unlimited split nesting / 无限层级分屏</b></li>
-        <li><b>Focus-based Tab placement / 基于焦点添加新 Tab</b></li>
-        <li><b>System monitor bar (CPU/Memory/Disk/Process) / 系统监控状态栏</b></li>
+        <li>Unlimited split nesting / 无限层级分屏</li>
+        <li>Focus-based Tab placement / 基于焦点添加新 Tab</li>
+        <li>System monitor bar (CPU/Memory/Disk/Process) / 系统监控状态栏</li>
     </ul>
 
     <h4>File Browser (SFTP) / 文件浏览器</h4>
@@ -42,12 +44,12 @@
         <li>Upload/Download with progress / 上传下载带进度</li>
         <li>Create folder & file / 新建文件夹和文件</li>
         <li>Rename, delete / 重命名、删除</li>
-        <li><b>Double-click to edit in IDEA / 双击在 IDEA 中编辑</b></li>
-        <li><b>Auto-sync on save with notification / 保存时自动同步（带通知）</b></li>
-        <li><b>Auto-reconnect on disconnect / 断线自动重连</b></li>
-        <li><b>IDEA Local History support / 支持本地历史记录</b></li>
-        <li><b>Download file rename detection / 下载文件重名检测</b></li>
-        <li><b>System monitor bar (CPU/Memory/Disk/Process) / 系统监控状态栏</b></li>
+        <li>Double-click to edit in IDEA / 双击在 IDEA 中编辑</li>
+        <li>Auto-sync on save with notification / 保存时自动同步（带通知）</li>
+        <li>Auto-reconnect on disconnect / 断线自动重连</li>
+        <li>IDEA Local History support / 支持本地历史记录</li>
+        <li>Download file rename detection / 下载文件重名检测</li>
+        <li>System monitor bar (CPU/Memory/Disk/Process) / 系统监控状态栏</li>
         <li>File properties view / 文件属性查看</li>
         <li>Quick search / 快速搜索</li>
     </ul>
@@ -63,10 +65,19 @@
 
     <h4>Batch Upload / 批量上传</h4>
     <ul>
-        <li>Upload to multiple servers / 上传到多台服务器</li>
+        <li><b>Multi-file upload to multiple servers / 多文件上传到多台服务器</b></li>
+        <li><b>Independent config per file (server, path, scripts) / 每个文件独立配置</b></li>
         <li>Upload queue management / 上传队列管理</li>
         <li>Pre/Post scripts / 前置/后置脚本</li>
+        <li>Temporary scripts / 临时脚本</li>
         <li>Custom remote filename / 自定义远程文件名</li>
+    </ul>
+
+    <h4>Config Management / 配置管理</h4>
+    <ul>
+        <li><b>Export all or selected configs / 导出全部或选择性导出</b></li>
+        <li><b>Import with overwrite/skip option / 导入支持覆盖或跳过</b></li>
+        <li><b>Preserve expand state on refresh / 刷新时保持展开状态</b></li>
     </ul>
 
     <h4>Data Storage / 数据存储</h4>
@@ -74,6 +85,16 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>1.1.7</b>
+    <ul>
+        <li>新增：配置导出/导入功能（支持全部导出或选择性导出）</li>
+        <li>新增：批量上传增强（多文件独立配置目标服务器、远程路径和脚本）</li>
+        <li>优化：SSH连接编辑对话框改为非模态</li>
+        <li>优化：前置/后置脚本编辑改为列表+编辑器方式</li>
+        <li>优化：刷新SSH连接列表时保持展开状态</li>
+        <li>修复：全部展开/全部收起按钮功能</li>
+    </ul>
+
     <b>1.1.6</b>
     <ul>
         <li>新增：跨分屏容器 Tab 拖拽移动</li>
