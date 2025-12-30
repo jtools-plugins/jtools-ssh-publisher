@@ -15,7 +15,8 @@ object TransferTaskManager {
 
     private val tasks = CopyOnWriteArrayList<TransferTask>()
     private val listeners = CopyOnWriteArrayList<TaskListener>()
-    private val executor = Executors.newFixedThreadPool(5)
+    @Volatile
+    private var executor = Executors.newFixedThreadPool(5)
     private val runningFutures = ConcurrentHashMap<String, Future<*>>()
     private val runningManagers = ConcurrentHashMap<String, SshConnectionManager>()
 
@@ -190,6 +191,7 @@ object TransferTaskManager {
 
 
     private fun executeTask(task: TransferTask) {
+        ensureExecutorAvailable()
         val future = executor.submit {
             // 每个任务创建独立的SSH连接
             val manager = SshConnectionManager()
@@ -449,5 +451,18 @@ object TransferTaskManager {
     fun shutdown() {
         runningManagers.values.forEach { it.cancel() }
         executor.shutdownNow()
+    }
+    
+    /**
+     * 确保线程池可用，如果已关闭则重新创建
+     */
+    private fun ensureExecutorAvailable() {
+        if (executor.isShutdown || executor.isTerminated) {
+            synchronized(this) {
+                if (executor.isShutdown || executor.isTerminated) {
+                    executor = Executors.newFixedThreadPool(5)
+                }
+            }
+        }
     }
 }
