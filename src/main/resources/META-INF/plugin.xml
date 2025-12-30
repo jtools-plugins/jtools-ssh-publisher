@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.lhstack.ssh-publisher</id>
     <name>JTools SSH Publisher</name>
-    <version>1.1.8</version>
+    <version>1.1.9</version>
     <vendor email="lhstack@foxmail.com" url="https://github.com/lhstack">lhstack</vendor>
 
     <description><![CDATA[
@@ -73,6 +73,19 @@
         <li>Custom remote filename / 自定义远程文件名</li>
     </ul>
 
+    <h4>Upload Templates / 上传模板</h4>
+    <ul>
+        <li><b>Save upload tasks as templates / 保存上传任务为模板</b></li>
+        <li><b>Group management / 分组管理</b></li>
+        <li>Configure local file, server, remote path / 配置本地文件、服务器、远程路径</li>
+        <li>Custom remote filename / 自定义远程文件名</li>
+        <li><b>Select server scripts or write temp scripts / 选择服务器脚本或临时脚本</b></li>
+        <li><b>Double-click to execute / 双击执行</b></li>
+        <li><b>Multi-select batch execution / 多选批量执行</b></li>
+        <li>Copy, edit, delete templates / 复制、编辑、删除模板</li>
+        <li><b>Export/Import includes templates / 导出导入包含模板</b></li>
+    </ul>
+
     <h4>Config Management / 配置管理</h4>
     <ul>
         <li><b>Export all or selected configs / 导出全部或选择性导出</b></li>
@@ -85,6 +98,15 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>1.1.9</b>
+    <ul>
+        <li>新增：上传模板功能（保存常用上传任务为模板，一键执行）</li>
+        <li>新增：模板分组管理</li>
+        <li>新增：模板支持选择服务器脚本和临时脚本</li>
+        <li>新增：模板支持多选批量执行</li>
+        <li>新增：导出/导入时包含模板配置</li>
+    </ul>
+
     <b>1.1.8</b>
     <ul>
         <li>新增：配置导出/导入功能（支持全部导出或选择性导出）</li>

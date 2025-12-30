@@ -9,6 +9,7 @@ import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import com.lhstack.ssh.model.SshConfig
+import com.lhstack.ssh.model.UploadTemplate
 import com.lhstack.ssh.service.SshConfigService
 import java.awt.BorderLayout
 import java.awt.Dimension
@@ -17,7 +18,7 @@ import javax.swing.JPanel
 import javax.swing.JTree
 
 /**
- * 导出选择对话框 - 选择要导出的SSH配置
+ * 导出选择对话框 - 选择要导出的SSH配置和上传模板
  */
 class ExportSelectDialog(
     private val project: Project
@@ -26,6 +27,7 @@ class ExportSelectDialog(
     private lateinit var checkboxTree: CheckboxTree
     private val rootNode = CheckedTreeNode("全部配置")
     private val configNodeMap = mutableMapOf<String, CheckedTreeNode>()
+    private val templateNodeMap = mutableMapOf<String, CheckedTreeNode>()
 
     init {
         title = "选择要导出的配置"
@@ -35,7 +37,8 @@ class ExportSelectDialog(
     }
 
     override fun createCenterPanel(): JComponent {
-        // 构建树结构
+        // SSH配置分组
+        val sshRootNode = CheckedTreeNode("SSH连接")
         val configsByGroup = SshConfigService.getConfigsByGroup()
         configsByGroup.toSortedMap().forEach { (group, configs) ->
             val groupNode = CheckedTreeNode(group)
@@ -46,8 +49,28 @@ class ExportSelectDialog(
                 groupNode.add(configNode)
             }
             groupNode.isChecked = false
-            rootNode.add(groupNode)
+            sshRootNode.add(groupNode)
         }
+        sshRootNode.isChecked = false
+        rootNode.add(sshRootNode)
+
+        // 上传模板分组
+        val templateRootNode = CheckedTreeNode("上传模板")
+        val templatesByGroup = SshConfigService.getUploadTemplatesByGroup()
+        templatesByGroup.toSortedMap().forEach { (group, templates) ->
+            val groupNode = CheckedTreeNode(group)
+            templates.sortedBy { it.name }.forEach { template ->
+                val templateNode = CheckedTreeNode(template)
+                templateNode.isChecked = false
+                templateNodeMap[template.id] = templateNode
+                groupNode.add(templateNode)
+            }
+            groupNode.isChecked = false
+            templateRootNode.add(groupNode)
+        }
+        templateRootNode.isChecked = false
+        rootNode.add(templateRootNode)
+        
         rootNode.isChecked = false
 
         // 创建复选框树
@@ -67,6 +90,13 @@ class ExportSelectDialog(
                         textRenderer.icon = AllIcons.Nodes.Plugin
                         textRenderer.append(userObject.name, SimpleTextAttributes.REGULAR_ATTRIBUTES)
                         textRenderer.append("  ${userObject.host}:${userObject.port}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                    }
+                    is UploadTemplate -> {
+                        textRenderer.icon = AllIcons.Actions.Upload
+                        textRenderer.append(userObject.name, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                        val sshConfig = SshConfigService.getConfigById(userObject.sshConfigId)
+                        val serverName = sshConfig?.name ?: "未知服务器"
+                        textRenderer.append("  → $serverName", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                     }
                     is String -> {
                         textRenderer.icon = AllIcons.Nodes.Folder
@@ -120,6 +150,14 @@ class ExportSelectDialog(
      */
     fun getSelectedConfigIds(): List<String> {
         return configNodeMap.filter { it.value.isChecked }
+            .map { it.key }
+    }
+
+    /**
+     * 获取选中的上传模板ID列表
+     */
+    fun getSelectedTemplateIds(): List<String> {
+        return templateNodeMap.filter { it.value.isChecked }
             .map { it.key }
     }
 }
