@@ -466,8 +466,8 @@ class MultiFileUploadDialog(
                 "${fileConfig.remotePath}/${fileConfig.remoteFileName}"
             }
             
-            fileConfig.selectedServerIds.forEach { serverId ->
-                val server = allServers.find { it.id == serverId } ?: return@forEach
+            fileConfig.selectedServerIds.forEach serverLoop@{ serverId ->
+                val server = allServers.find { it.id == serverId } ?: return@serverLoop
                 val scriptConfig = fileConfig.serverScriptSelections[serverId]
                 
                 val preScripts = scriptConfig?.preScripts
