@@ -40,11 +40,13 @@ class MainView(
     private val leftTabs = com.intellij.ui.components.JBTabbedPane(JTabbedPane.TOP)
     private val splitPane = JBSplitter(true, 0.4f)
     private lateinit var transferTaskPanel: TransferTaskPanel
+    private lateinit var uploadTemplatePanel: UploadTemplatePanel
 
     init {
         Disposer.register(parentDisposable, this)
         initTree()
         initTransferTaskPanel()
+        initUploadTemplatePanel()
         initActionToolbar()
         initSplitPane()
         refreshTree()
@@ -55,10 +57,15 @@ class MainView(
         Disposer.register(parentDisposable, transferTaskPanel)
     }
 
+    private fun initUploadTemplatePanel() {
+        uploadTemplatePanel = UploadTemplatePanel(project)
+    }
+
     private fun initSplitPane() {
-        // 左侧Tab：SSH连接 + 传输管理
+        // 左侧Tab：SSH连接 + 上传模板 + 传输管理
         leftTabs.addTab("SSH连接", AllIcons.Nodes.Plugin, JBScrollPane(tree))
-        leftTabs.addTab("传输管理", AllIcons.Actions.Upload, transferTaskPanel)
+        leftTabs.addTab("上传模板", AllIcons.Actions.Upload, uploadTemplatePanel)
+        leftTabs.addTab("传输管理", AllIcons.Toolwindows.ToolWindowMessages, transferTaskPanel)
         
         splitPane.firstComponent = leftTabs
         splitPane.secondComponent = terminalTabs
@@ -259,7 +266,18 @@ class MainView(
         val actionGroup = DefaultActionGroup().apply {
             add(object : AnAction({ "新建配置" }, AllIcons.Actions.AddFile) {
                 override fun actionPerformed(e: AnActionEvent) {
-                    AddItemDialog(project, null, null) { refreshTree() }.show()
+                    when (leftTabs.selectedIndex) {
+                        0 -> AddItemDialog(project, null, null) { refreshTree() }.show()
+                        1 -> uploadTemplatePanel.showNewTemplateDialog()
+                    }
+                }
+                override fun update(e: AnActionEvent) {
+                    when (leftTabs.selectedIndex) {
+                        0 -> e.presentation.text = "新建配置"
+                        1 -> e.presentation.text = "新建模板"
+                        else -> e.presentation.isVisible = false
+                    }
+                    e.presentation.isVisible = leftTabs.selectedIndex in 0..1
                 }
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
@@ -268,11 +286,20 @@ class MainView(
                 override fun actionPerformed(e: AnActionEvent) {
                     MultiFileUploadDialog(project).show()
                 }
+                override fun update(e: AnActionEvent) {
+                    e.presentation.isVisible = leftTabs.selectedIndex == 0
+                }
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
 
             add(object : AnAction({ "刷新" }, AllIcons.Actions.Refresh) {
-                override fun actionPerformed(e: AnActionEvent) = refreshTree()
+                override fun actionPerformed(e: AnActionEvent) {
+                    when (leftTabs.selectedIndex) {
+                        0 -> refreshTree()
+                        1 -> uploadTemplatePanel.refreshTree()
+                        2 -> transferTaskPanel.refreshList()
+                    }
+                }
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
 
@@ -280,14 +307,26 @@ class MainView(
 
             add(object : AnAction({ "全部展开" }, AllIcons.Actions.Expandall) {
                 override fun actionPerformed(e: AnActionEvent) {
-                    expandAllNodes()
+                    when (leftTabs.selectedIndex) {
+                        0 -> expandAllNodes()
+                        1 -> uploadTemplatePanel.expandAllNodes()
+                    }
+                }
+                override fun update(e: AnActionEvent) {
+                    e.presentation.isVisible = leftTabs.selectedIndex in 0..1
                 }
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
 
             add(object : AnAction({ "全部折叠" }, AllIcons.Actions.Collapseall) {
                 override fun actionPerformed(e: AnActionEvent) {
-                    collapseAllNodes()
+                    when (leftTabs.selectedIndex) {
+                        0 -> collapseAllNodes()
+                        1 -> uploadTemplatePanel.collapseAllNodes()
+                    }
+                }
+                override fun update(e: AnActionEvent) {
+                    e.presentation.isVisible = leftTabs.selectedIndex in 0..1
                 }
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
@@ -380,7 +419,8 @@ class MainView(
         val dialog = ExportSelectDialog(project)
         if (dialog.showAndGet()) {
             val selectedIds = dialog.getSelectedConfigIds()
-            if (selectedIds.isEmpty()) {
+            val selectedTemplateIds = dialog.getSelectedTemplateIds()
+            if (selectedIds.isEmpty() && selectedTemplateIds.isEmpty()) {
                 Messages.showWarningDialog(project, "未选择任何配置", "提示")
                 return
             }
@@ -392,7 +432,7 @@ class MainView(
                 val fileName = "ssh-configs-${System.currentTimeMillis()}.json"
                 val file = File(vf.path, fileName)
                 
-                ConfigExportImportService.exportSelectedToFile(file, selectedIds).fold(
+                ConfigExportImportService.exportSelectedToFile(file, selectedIds, selectedTemplateIds).fold(
                     onSuccess = { count ->
                         Messages.showInfoMessage(
                             project,

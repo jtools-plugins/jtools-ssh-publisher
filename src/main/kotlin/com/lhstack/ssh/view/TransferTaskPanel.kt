@@ -42,10 +42,10 @@ class TransferTaskPanel : JPanel(BorderLayout()), Disposable, TransferTaskManage
         add(toolbar, BorderLayout.NORTH)
         add(JBScrollPane(taskListPanel), BorderLayout.CENTER)
 
-        refreshTasks()
+        refreshList()
     }
 
-    private fun refreshTasks() {
+    fun refreshList() {
         taskListPanel.removeAll()
         taskPanels.clear()
 

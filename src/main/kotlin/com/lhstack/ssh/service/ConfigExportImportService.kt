@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import com.lhstack.ssh.model.ScriptConfig
 import com.lhstack.ssh.model.SshConfig
+import com.lhstack.ssh.model.UploadTemplate
 import java.io.File
 
 /**
@@ -20,7 +21,8 @@ object ConfigExportImportService {
     data class ExportData(
         val version: Int = 1,
         val exportTime: Long = System.currentTimeMillis(),
-        val configs: List<ConfigWithScripts>
+        val configs: List<ConfigWithScripts>,
+        val uploadTemplates: List<UploadTemplate> = emptyList()
     )
     
     /**
@@ -45,10 +47,14 @@ object ConfigExportImportService {
                     postScripts = SshConfigService.getPostScripts(config.id)
                 )
             }
+            val uploadTemplates = SshConfigService.getUploadTemplates()
             
-            val exportData = ExportData(configs = configsWithScripts)
+            val exportData = ExportData(
+                configs = configsWithScripts,
+                uploadTemplates = uploadTemplates
+            )
             file.writeText(gson.toJson(exportData))
-            Result.success(configs.size)
+            Result.success(configs.size + uploadTemplates.size)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -57,7 +63,7 @@ object ConfigExportImportService {
     /**
      * 导出选中的配置到JSON文件
      */
-    fun exportSelectedToFile(file: File, configIds: List<String>): Result<Int> {
+    fun exportSelectedToFile(file: File, configIds: List<String>, templateIds: List<String> = emptyList()): Result<Int> {
         return try {
             val configs = SshConfigService.getConfigs().filter { it.id in configIds }
             val configsWithScripts = configs.map { config ->
@@ -67,10 +73,14 @@ object ConfigExportImportService {
                     postScripts = SshConfigService.getPostScripts(config.id)
                 )
             }
+            val uploadTemplates = SshConfigService.getUploadTemplates().filter { it.id in templateIds }
             
-            val exportData = ExportData(configs = configsWithScripts)
+            val exportData = ExportData(
+                configs = configsWithScripts,
+                uploadTemplates = uploadTemplates
+            )
             file.writeText(gson.toJson(exportData))
-            Result.success(configs.size)
+            Result.success(configs.size + uploadTemplates.size)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -91,6 +101,7 @@ object ConfigExportImportService {
             var skipped = 0
             var updated = 0
             
+            // 导入SSH配置
             exportData.configs.forEach { configWithScripts ->
                 val config = configWithScripts.config
                 val existingConfig = SshConfigService.getConfigs()
@@ -147,7 +158,37 @@ object ConfigExportImportService {
                 }
             }
             
-            Result.success(ImportResult(imported, updated, skipped))
+            // 导入上传模板
+            var templateImported = 0
+            var templateSkipped = 0
+            var templateUpdated = 0
+            
+            exportData.uploadTemplates.forEach { template ->
+                val existingTemplate = SshConfigService.getUploadTemplates()
+                    .find { it.group == template.group && it.name == template.name }
+                
+                if (existingTemplate != null) {
+                    if (overwrite) {
+                        val updatedTemplate = template.copy(id = existingTemplate.id)
+                        SshConfigService.updateUploadTemplate(updatedTemplate)
+                        templateUpdated++
+                    } else {
+                        templateSkipped++
+                    }
+                } else {
+                    val newTemplate = template.copy(
+                        id = System.currentTimeMillis().toString() + "_" + template.id
+                    )
+                    SshConfigService.addUploadTemplate(newTemplate)
+                    templateImported++
+                }
+            }
+            
+            Result.success(ImportResult(
+                imported + templateImported,
+                updated + templateUpdated,
+                skipped + templateSkipped
+            ))
         } catch (e: Exception) {
             Result.failure(e)
         }
