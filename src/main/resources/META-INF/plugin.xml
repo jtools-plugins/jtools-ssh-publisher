@@ -229,7 +229,7 @@
     </ul>
     ]]></change-notes>
 
-    <idea-version since-build="223" until-build="253.*"/>
+    <idea-version since-build="223" until-build="261.*"/>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>org.jetbrains.plugins.terminal</depends>
