@@ -4,21 +4,25 @@ import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.terminal.JBTerminalPanel
+import com.intellij.terminal.JBTerminalSystemSettingsProviderBase
 import com.intellij.terminal.JBTerminalWidget
-import com.intellij.ui.components.JBScrollBar
 import com.jediterm.terminal.Questioner
 import com.jediterm.terminal.TtyConnector
+import com.jediterm.terminal.model.StyleState
+import com.jediterm.terminal.model.TerminalTextBuffer
 import com.jediterm.terminal.ui.JediTermWidget
 import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.service.SshConnectionManager
+import com.lhstack.ssh.util.SafeInputMethodRequests
+import com.lhstack.ssh.util.TerminalIoUtils
 import org.apache.sshd.client.channel.ChannelShell
 import org.apache.sshd.client.channel.ClientChannelEvent
-import org.jetbrains.plugins.terminal.JBTerminalSystemSettingsProvider
-import org.jetbrains.plugins.terminal.ShellTerminalWidget
 
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
+import java.awt.im.InputMethodRequests
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.*
@@ -92,10 +96,7 @@ class SshTerminalPanel(
 
                 SwingUtilities.invokeLater {
                     try {
-                        termWidget = ShellTerminalWidget(project, JBTerminalSystemSettingsProvider(),parentDisposable).apply {
-                            ttyConnector = connector
-                            preferredSize = Dimension(800, 600)
-                        }
+                        termWidget = createTerminalWidget(connector)
                         removeAll()
                         add(termWidget, BorderLayout.CENTER)
                         
@@ -222,14 +223,7 @@ class SshTerminalPanel(
 
                 SwingUtilities.invokeLater {
                     try {
-                        termWidget = object : JBTerminalWidget(project, JBTerminalSystemSettingsProvider(), parentDisposable) {
-//                            override fun createScrollBar(): JScrollBar {
-//                                return JBScrollBar()
-//                            }
-                        }.apply {
-                            ttyConnector = connector
-                            preferredSize = Dimension(800, 600)
-                        }
+                        termWidget = createTerminalWidget(connector)
                         removeAll()
                         add(termWidget, BorderLayout.CENTER)
                         
@@ -262,6 +256,47 @@ class SshTerminalPanel(
                 }
             }
         }.start()
+    }
+
+    private fun createTerminalWidget(connector: TtyConnector): JediTermWidget {
+        return object : JBTerminalWidget(project, SshTerminalSettingsProvider(), parentDisposable) {
+            override fun createTerminalPanel(
+                settingsProvider: com.jediterm.terminal.ui.settings.SettingsProvider,
+                styleState: StyleState,
+                textBuffer: TerminalTextBuffer
+            ): JBTerminalPanel {
+                return SafeJBTerminalPanel(
+                    settingsProvider as JBTerminalSystemSettingsProviderBase,
+                    textBuffer,
+                    styleState
+                )
+            }
+        }.apply {
+            ttyConnector = connector
+            preferredSize = Dimension(800, 600)
+        }
+    }
+
+    private inner class SafeJBTerminalPanel(
+        settingsProvider: JBTerminalSystemSettingsProviderBase,
+        textBuffer: TerminalTextBuffer,
+        styleState: StyleState
+    ) : JBTerminalPanel(settingsProvider, textBuffer, styleState) {
+
+        private val delegateInputMethodRequests by lazy { super.getInputMethodRequests() }
+
+        private val safeInputMethodRequests = SafeInputMethodRequests(
+            textLocationProvider = { hitInfo ->
+                delegateInputMethodRequests.getTextLocation(hitInfo)
+            },
+            insertPositionSupplier = {
+                delegateInputMethodRequests.insertPositionOffset
+            }
+        )
+
+        override fun getInputMethodRequests(): InputMethodRequests {
+            return safeInputMethodRequests
+        }
     }
     
     /**
@@ -323,15 +358,41 @@ class SshTerminalPanel(
         }
 
         override fun write(bytes: ByteArray) {
-            outputStream.write(bytes)
-            outputStream.flush()
+            TerminalIoUtils.chunkBytes(bytes).forEach { chunk ->
+                outputStream.write(chunk)
+                outputStream.flush()
+            }
         }
 
         override fun write(string: String) {
-            write(string.toByteArray(Charsets.UTF_8))
+            TerminalIoUtils.chunkUtf8(string).forEach { chunk ->
+                outputStream.write(chunk)
+                outputStream.flush()
+            }
         }
 
         override fun isConnected(): Boolean = running && channel.isOpen
+
+        override fun resize(termSize: Dimension, pixelSize: Dimension) {
+            val normalized = TerminalIoUtils.normalizeTerminalSize(
+                columns = termSize.width,
+                rows = termSize.height,
+                width = pixelSize.width,
+                height = pixelSize.height
+            )
+            if (!channel.isOpen) {
+                return
+            }
+            try {
+                channel.sendWindowChange(
+                    normalized.columns,
+                    normalized.rows,
+                    normalized.height,
+                    normalized.width
+                )
+            } catch (_: Exception) {
+            }
+        }
 
         override fun waitFor(): Int {
             return channel.waitFor(EnumSet.of(ClientChannelEvent.CLOSED), 0L).size

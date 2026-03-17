@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "com.lhstack"
-version = "1.0.9"
+version = "1.1.0"
 
 
 repositories {
@@ -30,8 +30,14 @@ dependencies {
     implementation("org.apache.sshd:sshd-sftp:2.15.0")
     implementation("org.xerial:sqlite-jdbc:3.45.1.0")
 //    implementation(files("/Users/lhstack/.jtools/sdk/sdk.jar"))
-    implementation(files("C:/Users/1/.jtools/sdk/sdk.jar"))
+    implementation(files("/Users/lhstack/.jtools/sdk/sdk.jar"))
     testImplementation("org.jetbrains.kotlin:kotlin-test")
+}
+
+configurations.configureEach {
+    // IntelliJ 平台已经提供 SLF4J 绑定，插件再打入 API/bridge 会触发类加载冲突。
+    exclude(group = "org.slf4j", module = "slf4j-api")
+    exclude(group = "org.slf4j", module = "jcl-over-slf4j")
 }
 tasks {
     // Set the JVM compatibility versions

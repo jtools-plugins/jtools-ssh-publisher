@@ -15,6 +15,7 @@ import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.TreeSpeedSearch
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.treeStructure.Tree
+import com.lhstack.ssh.PluginIcons
 import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.service.ConfigExportImportService
 import com.lhstack.ssh.service.SshConfigService
@@ -282,7 +283,7 @@ class MainView(
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
 
-            add(object : AnAction({ "批量上传" }, AllIcons.Actions.Upload) {
+            add(object : AnAction({ "批量上传" }, PluginIcons.BatchUpload) {
                 override fun actionPerformed(e: AnActionEvent) {
                     MultiFileUploadDialog(project).show()
                 }
