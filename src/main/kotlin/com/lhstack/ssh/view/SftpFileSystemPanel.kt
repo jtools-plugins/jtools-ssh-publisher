@@ -16,13 +16,22 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.ui.JBUI
+import com.lhstack.ssh.PluginIcons
 import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.model.TransferTask
 import com.lhstack.ssh.service.RemoteFileEditorService
 import com.lhstack.ssh.service.SshConnectionManager
 import com.lhstack.ssh.service.TransferTaskManager
+import com.lhstack.ssh.util.SftpTreeOperationUtils
+import com.lhstack.ssh.util.UploadPlan
+import com.lhstack.ssh.util.UploadPlanItem
+import com.lhstack.ssh.util.UploadPathUtils
+import com.lhstack.ssh.util.LatestRequestGuard
 import org.apache.sshd.sftp.client.SftpClient
 import java.awt.BorderLayout
+import java.awt.datatransfer.DataFlavor
+import java.awt.datatransfer.Transferable
+import java.awt.dnd.DnDConstants
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
@@ -30,10 +39,13 @@ import java.awt.event.MouseEvent
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import javax.swing.*
+import javax.swing.TransferHandler.TransferSupport
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeModel
+import javax.swing.tree.TreeSelectionModel
 import javax.swing.tree.TreePath
 
 /**
@@ -62,14 +74,66 @@ class SftpFileSystemPanel(
     }
 
     private var currentPath = "/"
+    private val remoteNodeFlavor = DataFlavor(RemoteTreeTransferData::class.java, "RemoteTreeTransferData")
+    private val navigationGuard = LatestRequestGuard()
+    private val uploadRefreshTargetsByTaskId = ConcurrentHashMap<String, Set<String>>()
+    private val pendingRefreshDirectories = linkedSetOf<String>()
+    private val uploadTaskListener = object : TransferTaskManager.TaskListener {
+        override fun onTaskAdded(task: TransferTask) = Unit
+
+        override fun onTaskUpdated(task: TransferTask) {
+            if (task.type != TransferTask.TransferType.UPLOAD || task.config != config) {
+                return
+            }
+            when (task.status) {
+                TransferTask.TaskStatus.SUCCESS -> {
+                    scheduleDirectoryRefreshes(uploadRefreshTargetsByTaskId.remove(task.id).orEmpty())
+                }
+                TransferTask.TaskStatus.FAILED,
+                TransferTask.TaskStatus.STOPPED -> {
+                    uploadRefreshTargetsByTaskId.remove(task.id)
+                }
+                else -> Unit
+            }
+        }
+
+        override fun onTaskRemoved(task: TransferTask) {
+            uploadRefreshTargetsByTaskId.remove(task.id)
+        }
+    }
+    private val deferredRefreshTimer = javax.swing.Timer(250) { flushPendingDirectoryRefreshes() }.apply {
+        isRepeats = false
+    }
 
     init {
+        TransferTaskManager.addListener(uploadTaskListener)
         initToolbar()
         initContent()
         connect()
     }
 
     private fun initToolbar() {
+        val batchUploadAction = object : AnAction("批量上传", "批量上传多个文件到当前目录或所选目录", PluginIcons.BatchUpload) {
+            override fun actionPerformed(e: AnActionEvent) = batchUploadFiles()
+            override fun getActionUpdateThread() = ActionUpdateThread.BGT
+        }
+
+        val deleteAction = object : AnAction("删除", "删除选中的文件或文件夹", AllIcons.Actions.GC) {
+            override fun actionPerformed(e: AnActionEvent) = deleteSelected()
+
+            override fun update(e: AnActionEvent) {
+                val selectedNodes = getSelectedFileNodes()
+                val visibleNodes = selectedNodes.filterNot { it.path == currentPath }
+                val isBatch = visibleNodes.size > 1
+                e.presentation.isEnabled = visibleNodes.isNotEmpty()
+                e.presentation.text = if (isBatch) "批量删除" else "删除"
+                e.presentation.description = if (isBatch) "递归删除选中的多个文件或文件夹" else "删除选中的文件或文件夹"
+                e.presentation.icon = if (isBatch) PluginIcons.BatchDelete else AllIcons.Actions.GC
+            }
+
+            override fun getActionUpdateThread() = ActionUpdateThread.BGT
+        }
+
         val actionGroup = DefaultActionGroup().apply {
             add(object : AnAction("上级目录", "返回上级目录", AllIcons.Actions.MoveUp) {
                 override fun actionPerformed(e: AnActionEvent) = goUp()
@@ -88,12 +152,12 @@ class SftpFileSystemPanel(
                 override fun actionPerformed(e: AnActionEvent) = uploadFile()
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
+            add(batchUploadAction)
             add(object : AnAction("下载", "下载选中的文件", AllIcons.Actions.Download) {
                 override fun actionPerformed(e: AnActionEvent) = downloadSelected()
                 override fun update(e: AnActionEvent) {
-                    val node = tree.lastSelectedPathComponent as? DefaultMutableTreeNode
-                    val fileNode = node?.userObject as? FileNode
-                    e.presentation.isEnabled = fileNode != null && !fileNode.isDirectory
+                    val selected = getSelectedFileNodes()
+                    e.presentation.isEnabled = selected.size == 1 && !selected.first().isDirectory
                 }
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
@@ -105,15 +169,7 @@ class SftpFileSystemPanel(
                 override fun actionPerformed(e: AnActionEvent) = createFile()
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
-            add(object : AnAction("删除", "删除选中的文件或文件夹", AllIcons.Actions.GC) {
-                override fun actionPerformed(e: AnActionEvent) = deleteSelected()
-                override fun update(e: AnActionEvent) {
-                    val node = tree.lastSelectedPathComponent as? DefaultMutableTreeNode
-                    val fileNode = node?.userObject as? FileNode
-                    e.presentation.isEnabled = fileNode != null && fileNode.path != currentPath
-                }
-                override fun getActionUpdateThread() = ActionUpdateThread.BGT
-            })
+            add(deleteAction)
         }
 
         val toolbar = ActionManager.getInstance().createActionToolbar("sftp-toolbar", actionGroup, true)
@@ -144,6 +200,10 @@ class SftpFileSystemPanel(
             showsRootHandles = true
             cellRenderer = FileTreeRenderer()
             rowHeight = 24
+            dragEnabled = true
+            dropMode = DropMode.ON
+            selectionModel.selectionMode = TreeSelectionModel.DISCONTIGUOUS_TREE_SELECTION
+            transferHandler = FileTreeTransferHandler()
 
             // 双击进入目录或打开文件编辑
             addMouseListener(object : MouseAdapter() {
@@ -168,7 +228,9 @@ class SftpFileSystemPanel(
                 private fun handlePopup(e: MouseEvent) {
                     if (e.isPopupTrigger) {
                         val path = tree.getPathForLocation(e.x, e.y)
-                        if (path != null) tree.selectionPath = path
+                        if (path != null && !tree.isPathSelected(path)) {
+                            tree.selectionPath = path
+                        }
                         showContextMenu(e)
                     }
                 }
@@ -248,6 +310,7 @@ class SftpFileSystemPanel(
     }
 
     private fun navigateTo(path: String) {
+        val token = navigationGuard.nextToken()
         val targetPath = when {
             path == "~" -> config.remoteDir.ifEmpty { "/" }
             path.startsWith("/") -> path
@@ -259,35 +322,44 @@ class SftpFileSystemPanel(
                 val sftp = connectionManager.getSftpClient()
                 val attrs = sftp.stat(targetPath)
                 if (attrs.isDirectory) {
-                    currentPath = targetPath
                     SwingUtilities.invokeLater {
-                        pathField.text = currentPath
-                        loadRootDirectory()
+                        if (!navigationGuard.isLatest(token)) {
+                            return@invokeLater
+                        }
+                        currentPath = targetPath
+                        pathField.text = targetPath
+                        loadRootDirectory(targetPath, token)
                     }
                 }
             } catch (e: Exception) {
                 SwingUtilities.invokeLater {
+                    if (!navigationGuard.isLatest(token)) {
+                        return@invokeLater
+                    }
                     Messages.showErrorDialog(project, "无法访问: $targetPath\n${e.message}", "错误")
                 }
             }
         }
     }
 
-    private fun loadRootDirectory() {
+    private fun loadRootDirectory(path: String = currentPath, token: Long? = null) {
         statusLabel.text = "加载中..."
         statusLabel.icon = AllIcons.Process.Step_1
 
         executor.submit {
             try {
                 val sftp = connectionManager.getSftpClient()
-                val entries = sftp.readDir(currentPath)
+                val entries = sftp.readDir(path)
                     .filter { it.filename != "." && it.filename != ".." }
                     .sortedWith(compareByDescending<SftpClient.DirEntry> { it.attributes.isDirectory }.thenBy { it.filename })
 
                 SwingUtilities.invokeLater {
+                    if (token != null && !navigationGuard.isLatest(token)) {
+                        return@invokeLater
+                    }
                     rootNode.removeAllChildren()
                     entries.forEach { entry ->
-                        val filePath = "$currentPath/${entry.filename}".replace("//", "/")
+                        val filePath = "$path/${entry.filename}".replace("//", "/")
                         val perms = formatPermissions(entry.attributes.permissions)
                         val node = DefaultMutableTreeNode(
                             FileNode(filePath, entry.attributes.isDirectory, entry.attributes.size,
@@ -304,6 +376,9 @@ class SftpFileSystemPanel(
                 }
             } catch (e: Exception) {
                 SwingUtilities.invokeLater {
+                    if (token != null && !navigationGuard.isLatest(token)) {
+                        return@invokeLater
+                    }
                     statusLabel.text = "加载失败: ${e.message}"
                     statusLabel.icon = AllIcons.General.Error
                 }
@@ -394,22 +469,143 @@ class SftpFileSystemPanel(
     }
 
     private fun uploadFile() {
+        val targetDirectory = resolveBatchUploadTargetDirectory()
         val descriptor = FileChooserDescriptorFactory.createSingleFileDescriptor()
         descriptor.title = "选择要上传的文件"
         FileChooser.chooseFile(descriptor, project, null)?.let { vf ->
-            val localFile = File(vf.path)
-            val remotePath = "$currentPath/${localFile.name}".replace("//", "/")
-            
-            // 创建上传任务并添加到传输管理器
-            val task = TransferTask(
-                type = TransferTask.TransferType.UPLOAD,
-                localFile = localFile,
-                remotePath = remotePath,
-                config = config,
-                fileSize = localFile.length()
+            queueUploadPlan(
+                SftpTreeOperationUtils.buildUploadPlan(
+                    sources = listOf(File(vf.path)),
+                    targetDirectory = targetDirectory
+                ),
+                targetDirectory
             )
-            TransferTaskManager.addTask(task)
-            statusLabel.text = "已添加上传任务: ${localFile.name}"
+        }
+    }
+
+    private fun batchUploadFiles(targetDirectory: String = resolveBatchUploadTargetDirectory()) {
+        val descriptor = FileChooserDescriptorFactory.createMultipleFilesNoJarsDescriptor().apply {
+            title = "选择要上传的文件"
+        }
+        FileChooser.chooseFiles(descriptor, project, null) { files ->
+            val localFiles = files.map { File(it.path) }.filter { it.exists() }
+            queueUploadPlan(SftpTreeOperationUtils.buildUploadPlan(localFiles, targetDirectory), targetDirectory)
+        }
+    }
+
+    private fun resolveBatchUploadTargetDirectory(): String {
+        val selected = getSelectedFileNodes()
+        val primary = getPrimarySelectedFileNode()
+        return when {
+            primary?.isDirectory == true -> primary.path
+            else -> selected.firstOrNull { it.isDirectory }?.path ?: currentPath
+        }
+    }
+
+    private fun queueUploadPlan(plan: UploadPlan, refreshTargetDirectory: String) {
+        if (plan.directories.isEmpty() && plan.files.isEmpty()) {
+            return
+        }
+
+        executor.submit {
+            try {
+                val sftp = connectionManager.getSftpClient()
+                plan.directories.sorted().forEach { ensureRemoteDirectory(sftp, it) }
+                val tasks = plan.files.map { createUploadTask(it) }
+                registerUploadRefreshTargets(tasks, refreshTargetDirectory)
+
+                SwingUtilities.invokeLater {
+                    when {
+                        tasks.isEmpty() -> {
+                            statusLabel.text = "已创建 ${plan.directories.size} 个目录"
+                            statusLabel.icon = AllIcons.General.InspectionsOK
+                            refreshVisibleDirectory(refreshTargetDirectory)
+                        }
+                        tasks.size == 1 -> {
+                            TransferTaskManager.addTask(tasks.first())
+                            statusLabel.text = "已添加上传任务: ${tasks.first().localFile.name}"
+                        }
+                        else -> {
+                            TransferTaskManager.addTasks(tasks)
+                            statusLabel.text = "已添加 ${tasks.size} 个上传任务"
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                SwingUtilities.invokeLater {
+                    Messages.showErrorDialog(project, "上传准备失败: ${e.message}", "错误")
+                }
+            }
+        }
+    }
+
+    private fun registerUploadRefreshTargets(tasks: List<TransferTask>, refreshTargetDirectory: String) {
+        tasks.forEach { task ->
+            uploadRefreshTargetsByTaskId[task.id] = linkedSetOf(
+                refreshTargetDirectory,
+                SftpTreeOperationUtils.parentDirectory(task.remotePath)
+            )
+        }
+    }
+
+    private fun createUploadTask(item: UploadPlanItem): TransferTask {
+        return TransferTask(
+            type = TransferTask.TransferType.UPLOAD,
+            localFile = item.localFile,
+            remotePath = item.remotePath,
+            config = config,
+            fileSize = item.localFile.length()
+        )
+    }
+
+    private fun getPrimarySelectedFileNode(): FileNode? {
+        return (tree.lastSelectedPathComponent as? DefaultMutableTreeNode)?.userObject as? FileNode
+    }
+
+    private fun getSelectedFileNodes(): List<FileNode> {
+        return tree.selectionPaths.orEmpty()
+            .mapNotNull { (it.lastPathComponent as? DefaultMutableTreeNode)?.userObject as? FileNode }
+    }
+
+    private fun getEffectiveSelectedFileNodes(): List<FileNode> {
+        val nodesByPath = getSelectedFileNodes().associateBy { it.path }
+        return SftpTreeOperationUtils.deduplicatePaths(nodesByPath.keys.toList())
+            .mapNotNull { nodesByPath[it] }
+            .filterNot { it.path == currentPath }
+    }
+
+    private fun findNodeByPath(path: String): DefaultMutableTreeNode? {
+        fun search(node: DefaultMutableTreeNode): DefaultMutableTreeNode? {
+            val fileNode = node.userObject as? FileNode
+            if (fileNode?.path == path) {
+                return node
+            }
+            for (index in 0 until node.childCount) {
+                val child = node.getChildAt(index) as? DefaultMutableTreeNode ?: continue
+                search(child)?.let { return it }
+            }
+            return null
+        }
+        return search(rootNode)
+    }
+
+    private fun ensureRemoteDirectory(sftp: SftpClient, directory: String) {
+        if (directory.isBlank() || directory == "/") {
+            return
+        }
+
+        val segments = directory.split("/").filter { it.isNotBlank() }
+        var current = ""
+        segments.forEach { segment ->
+            current = "$current/$segment"
+            try {
+                val attrs = sftp.stat(current)
+                if (!attrs.isDirectory) {
+                    throw IllegalStateException("$current 不是目录")
+                }
+            } catch (_: Exception) {
+                sftp.mkdir(current)
+            }
         }
     }
 
@@ -536,27 +732,36 @@ class SftpFileSystemPanel(
     }
 
     private fun deleteSelected() {
-        val node = tree.lastSelectedPathComponent as? DefaultMutableTreeNode ?: return
-        val fileNode = node.userObject as? FileNode ?: return
+        val selectedNodes = getEffectiveSelectedFileNodes()
+        if (selectedNodes.isEmpty()) return
+        val isBatch = selectedNodes.size > 1
 
-        if (Messages.showYesNoDialog(project, "确定删除 \"${fileNode.name}\"?", "确认删除", Messages.getWarningIcon()) != Messages.YES) return
+        val message = if (isBatch) {
+            "确定递归删除选中的 ${selectedNodes.size} 项吗？"
+        } else {
+            "确定删除 \"${selectedNodes.first().name}\" 吗？"
+        }
+
+        if (Messages.showYesNoDialog(project, message, if (isBatch) "确认批量删除" else "确认删除", Messages.getWarningIcon()) != Messages.YES) {
+            return
+        }
 
         executor.submit {
             try {
                 val sftp = connectionManager.getSftpClient()
-                if (fileNode.isDirectory) sftp.rmdir(fileNode.path) else sftp.remove(fileNode.path)
-                
-                // 删除本地缓存文件
-                if (!fileNode.isDirectory) {
-                    remoteFileEditorService.deleteLocalCache(fileNode.path)
-                }
-                
                 SwingUtilities.invokeLater {
-                    (node.parent as? DefaultMutableTreeNode)?.let {
-                        it.remove(node)
-                        treeModel.nodeStructureChanged(it)
-                    }
-                    statusLabel.text = "已删除"
+                    statusLabel.text = if (isBatch) "正在批量删除..." else "正在删除..."
+                    statusLabel.icon = AllIcons.Process.Step_1
+                }
+
+                selectedNodes.forEach { fileNode ->
+                    deleteRemoteNodeRecursively(sftp, fileNode.path, fileNode.isDirectory)
+                }
+
+                SwingUtilities.invokeLater {
+                    statusLabel.text = if (isBatch) "已批量删除 ${selectedNodes.size} 项" else "已删除"
+                    statusLabel.icon = AllIcons.General.InspectionsOK
+                    refresh()
                 }
             } catch (e: Exception) {
                 SwingUtilities.invokeLater {
@@ -567,44 +772,53 @@ class SftpFileSystemPanel(
     }
 
     private fun showContextMenu(e: MouseEvent) {
-        val node = tree.lastSelectedPathComponent as? DefaultMutableTreeNode
-        val fileNode = node?.userObject as? FileNode
+        val selectedNodes = getEffectiveSelectedFileNodes()
+        val primaryNode = getPrimarySelectedFileNode()
+        val isBatch = selectedNodes.size > 1
 
         JPopupMenu().apply {
-            if (fileNode?.isDirectory == true) {
+            if (!isBatch && primaryNode?.isDirectory == true) {
                 add(JMenuItem("打开", AllIcons.Actions.MenuOpen).apply {
-                    addActionListener { navigateTo(fileNode.path) }
+                    addActionListener { navigateTo(primaryNode.path) }
                 })
                 add(JMenuItem("上传到此目录", AllIcons.Actions.Upload).apply {
-                    addActionListener { uploadToDirectory(fileNode.path) }
+                    addActionListener { uploadToDirectory(primaryNode.path) }
+                })
+                add(JMenuItem("批量上传到此目录", PluginIcons.BatchUpload).apply {
+                    addActionListener { batchUploadFiles(primaryNode.path) }
                 })
                 addSeparator()
             }
-            if (fileNode != null && !fileNode.isDirectory) {
+            if (!isBatch && primaryNode != null && !primaryNode.isDirectory) {
                 add(JMenuItem("编辑", AllIcons.Actions.Edit).apply {
-                    addActionListener { openFileInEditor(fileNode) }
+                    addActionListener { openFileInEditor(primaryNode) }
                 })
                 add(JMenuItem("下载", AllIcons.Actions.Download).apply {
                     addActionListener { downloadSelected() }
                 })
             }
-            if (fileNode != null) {
+            if (!isBatch && primaryNode != null) {
                 add(JMenuItem("重命名", AllIcons.Actions.Edit).apply {
-                    addActionListener { renameFile(fileNode) }
-                })
-                add(JMenuItem("删除", AllIcons.Actions.GC).apply {
-                    addActionListener { deleteSelected() }
+                    addActionListener { renameFile(primaryNode) }
                 })
                 addSeparator()
                 add(JMenuItem("复制路径", AllIcons.Actions.Copy).apply {
                     addActionListener {
                         java.awt.Toolkit.getDefaultToolkit().systemClipboard
-                            .setContents(java.awt.datatransfer.StringSelection(fileNode.path), null)
+                            .setContents(java.awt.datatransfer.StringSelection(primaryNode.path), null)
                         statusLabel.text = "已复制路径"
                     }
                 })
                 add(JMenuItem("属性", AllIcons.Actions.Properties).apply {
-                    addActionListener { showProperties(fileNode) }
+                    addActionListener { showProperties(primaryNode) }
+                })
+            }
+            if (selectedNodes.isNotEmpty()) {
+                if (componentCount > 0) {
+                    addSeparator()
+                }
+                add(JMenuItem(if (isBatch) "批量删除" else "删除", if (isBatch) PluginIcons.BatchDelete else AllIcons.Actions.GC).apply {
+                    addActionListener { deleteSelected() }
                 })
             }
         }.show(e.component, e.x, e.y)
@@ -613,19 +827,7 @@ class SftpFileSystemPanel(
     private fun uploadToDirectory(targetDir: String) {
         val descriptor = FileChooserDescriptorFactory.createSingleFileDescriptor()
         FileChooser.chooseFile(descriptor, project, null)?.let { vf ->
-            val localFile = File(vf.path)
-            val remotePath = "$targetDir/${localFile.name}".replace("//", "/")
-            
-            // 创建上传任务并添加到传输管理器
-            val task = TransferTask(
-                type = TransferTask.TransferType.UPLOAD,
-                localFile = localFile,
-                remotePath = remotePath,
-                config = config,
-                fileSize = localFile.length()
-            )
-            TransferTaskManager.addTask(task)
-            statusLabel.text = "已添加上传任务: ${localFile.name}"
+            queueUploadPlan(SftpTreeOperationUtils.buildUploadPlan(listOf(File(vf.path)), targetDir), targetDir)
         }
     }
 
@@ -644,6 +846,141 @@ class SftpFileSystemPanel(
                 }
             }
         }
+    }
+
+    private fun deleteRemoteNodeRecursively(sftp: SftpClient, path: String, isDirectory: Boolean) {
+        if (isDirectory) {
+            sftp.readDir(path)
+                .filter { it.filename != "." && it.filename != ".." }
+                .forEach { entry ->
+                    val childPath = UploadPathUtils.buildRemotePath(path, entry.filename)
+                    deleteRemoteNodeRecursively(sftp, childPath, entry.attributes.isDirectory)
+                }
+            sftp.rmdir(path)
+            return
+        }
+
+        sftp.remove(path)
+        remoteFileEditorService.deleteLocalCache(path)
+    }
+
+    private fun moveSelectedNodes(targetDirectory: String, sourcePaths: List<String>? = null) {
+        val selectedNodes = if (sourcePaths == null) {
+            getEffectiveSelectedFileNodes()
+        } else {
+            sourcePaths.mapNotNull { path -> (findNodeByPath(path)?.userObject as? FileNode) }
+        }
+        if (selectedNodes.isEmpty()) {
+            return
+        }
+
+        val conflicts = selectedNodes.filter {
+            it.isDirectory && SftpTreeOperationUtils.isMoveIntoSelf(it.path, targetDirectory)
+        }
+        if (conflicts.isNotEmpty()) {
+            Messages.showErrorDialog(project, "不能将目录移动到它自己或其子目录中", "移动失败")
+            return
+        }
+
+        executor.submit {
+            try {
+                val sftp = connectionManager.getSftpClient()
+                val movePairs = selectedNodes.mapNotNull { node ->
+                    val destination = UploadPathUtils.buildRemotePath(targetDirectory, node.name)
+                    if (destination == node.path) null else node.path to destination
+                }
+
+                movePairs.forEach { (_, destination) ->
+                    try {
+                        sftp.stat(destination)
+                        throw IllegalStateException("目标已存在: $destination")
+                    } catch (conflict: IllegalStateException) {
+                        throw conflict
+                    } catch (_: Exception) {
+                    }
+                }
+
+                movePairs.forEach { (source, destination) ->
+                    ensureRemoteDirectory(sftp, destination.substringBeforeLast("/").ifEmpty { "/" })
+                    sftp.rename(source, destination)
+                }
+
+                SwingUtilities.invokeLater {
+                    statusLabel.text = if (movePairs.size > 1) "已移动 ${movePairs.size} 项" else "移动成功"
+                    statusLabel.icon = AllIcons.General.InspectionsOK
+                    refresh()
+                }
+            } catch (e: Exception) {
+                SwingUtilities.invokeLater {
+                    Messages.showErrorDialog(project, "移动失败: ${e.message}", "错误")
+                }
+            }
+        }
+    }
+
+    private fun resolveDropDirectory(treePath: TreePath?): String {
+        val fileNode = (treePath?.lastPathComponent as? DefaultMutableTreeNode)?.userObject as? FileNode
+        return when {
+            fileNode == null -> currentPath
+            fileNode.isDirectory -> fileNode.path
+            else -> fileNode.path.substringBeforeLast("/").ifEmpty { "/" }
+        }
+    }
+
+    private fun scheduleDirectoryRefreshes(paths: Collection<String>) {
+        if (paths.isEmpty()) {
+            return
+        }
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater { scheduleDirectoryRefreshes(paths) }
+            return
+        }
+        val visibleDirectories = collectVisibleDirectoryPaths()
+        paths.asSequence()
+            .filter { it.isNotBlank() }
+            .map { SftpTreeOperationUtils.resolveRefreshDirectory(it, currentPath, visibleDirectories) }
+            .forEach { pendingRefreshDirectories.add(it) }
+        deferredRefreshTimer.restart()
+    }
+
+    private fun flushPendingDirectoryRefreshes() {
+        val directories = pendingRefreshDirectories.toList()
+            .sortedBy { it.length }
+        pendingRefreshDirectories.clear()
+        directories.forEach { refreshVisibleDirectory(it) }
+    }
+
+    private fun refreshVisibleDirectory(path: String) {
+        val visibleDirectories = collectVisibleDirectoryPaths()
+        val refreshPath = SftpTreeOperationUtils.resolveRefreshDirectory(path, currentPath, visibleDirectories)
+        if (refreshPath == currentPath) {
+            loadRootDirectory(currentPath)
+            return
+        }
+        val node = findNodeByPath(refreshPath)
+        if (node != null) {
+            loadDirectory(refreshPath, node)
+        } else {
+            loadRootDirectory(currentPath)
+        }
+    }
+
+    private fun collectVisibleDirectoryPaths(): Set<String> {
+        val directories = linkedSetOf<String>()
+
+        fun collect(node: DefaultMutableTreeNode) {
+            val fileNode = node.userObject as? FileNode
+            if (fileNode?.isDirectory == true) {
+                directories.add(fileNode.path)
+            }
+            for (index in 0 until node.childCount) {
+                val child = node.getChildAt(index) as? DefaultMutableTreeNode ?: continue
+                collect(child)
+            }
+        }
+
+        collect(rootNode)
+        return directories
     }
 
     private fun showProperties(fileNode: FileNode) {
@@ -703,7 +1040,86 @@ class SftpFileSystemPanel(
         else -> String.format("%.2f GB", bytes / 1024.0 / 1024.0 / 1024.0)
     }
 
+    private inner class FileTreeTransferHandler : TransferHandler() {
+
+        override fun getSourceActions(c: JComponent): Int = DnDConstants.ACTION_COPY_OR_MOVE
+
+        override fun createTransferable(c: JComponent): Transferable? {
+            val selectedPaths = getEffectiveSelectedFileNodes().map { it.path }
+            if (selectedPaths.isEmpty()) {
+                return null
+            }
+            return object : Transferable {
+                private val data = RemoteTreeTransferData(selectedPaths)
+
+                override fun getTransferDataFlavors(): Array<DataFlavor> = arrayOf(remoteNodeFlavor)
+
+                override fun isDataFlavorSupported(flavor: DataFlavor): Boolean = flavor == remoteNodeFlavor
+
+                override fun getTransferData(flavor: DataFlavor): Any {
+                    if (!isDataFlavorSupported(flavor)) {
+                        throw UnsupportedOperationException("Unsupported flavor: $flavor")
+                    }
+                    return data
+                }
+            }
+        }
+
+        override fun canImport(support: TransferSupport): Boolean {
+            if (!support.isDrop) {
+                return false
+            }
+            val targetDirectory = resolveDropDirectory((support.dropLocation as? JTree.DropLocation)?.path)
+            if (support.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                support.dropAction = DnDConstants.ACTION_COPY
+                return targetDirectory.isNotBlank()
+            }
+            if (!support.isDataFlavorSupported(remoteNodeFlavor)) {
+                return false
+            }
+            return try {
+                val data = support.transferable.getTransferData(remoteNodeFlavor) as RemoteTreeTransferData
+                val nodesByPath = getEffectiveSelectedFileNodes().associateBy { it.path }
+                val selectedNodes = data.paths.mapNotNull { nodesByPath[it] }
+                selectedNodes.none { it.isDirectory && SftpTreeOperationUtils.isMoveIntoSelf(it.path, targetDirectory) }
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        override fun importData(support: TransferSupport): Boolean {
+            if (!canImport(support)) {
+                return false
+            }
+
+            val targetDirectory = resolveDropDirectory((support.dropLocation as? JTree.DropLocation)?.path)
+            return try {
+                when {
+                    support.isDataFlavorSupported(DataFlavor.javaFileListFlavor) -> {
+                        @Suppress("UNCHECKED_CAST")
+                        val files = support.transferable.getTransferData(DataFlavor.javaFileListFlavor) as List<File>
+                        queueUploadPlan(SftpTreeOperationUtils.buildUploadPlan(files, targetDirectory), targetDirectory)
+                        true
+                    }
+
+                    support.isDataFlavorSupported(remoteNodeFlavor) -> {
+                        val data = support.transferable.getTransferData(remoteNodeFlavor) as RemoteTreeTransferData
+                        moveSelectedNodes(targetDirectory, data.paths)
+                        true
+                    }
+
+                    else -> false
+                }
+            } catch (e: Exception) {
+                Messages.showErrorDialog(project, "拖拽操作失败: ${e.message}", "错误")
+                false
+            }
+        }
+    }
+
     override fun dispose() {
+        TransferTaskManager.removeListener(uploadTaskListener)
+        deferredRefreshTimer.stop()
         executor.shutdownNow()
         remoteFileEditorService.dispose()
         connectionManager.close()
@@ -713,6 +1129,8 @@ class SftpFileSystemPanel(
 data class FileNode(val path: String, val isDirectory: Boolean, val size: Long, val modifyTime: Long, val permissions: String) {
     val name: String get() = path.substringAfterLast("/").ifEmpty { "/" }
 }
+
+private data class RemoteTreeTransferData(val paths: List<String>)
 
 class FileTreeRenderer : ColoredTreeCellRenderer() {
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm")

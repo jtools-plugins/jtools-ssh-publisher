@@ -2,6 +2,7 @@ package com.lhstack.ssh.service
 
 import com.lhstack.ssh.model.ScriptConfig
 import com.lhstack.ssh.model.SshConfig
+import com.lhstack.ssh.model.UploadTemplate
 import java.io.File
 import java.sql.Connection
 import java.sql.DriverManager
@@ -57,12 +58,39 @@ object SshConfigService {
             """.trimIndent()
             )
             
+            stmt.executeUpdate(
+                """
+                CREATE TABLE IF NOT EXISTS upload_template (
+                    id TEXT PRIMARY KEY,
+                    group_name TEXT,
+                    name TEXT NOT NULL,
+                    local_path TEXT NOT NULL,
+                    ssh_config_id TEXT NOT NULL,
+                    remote_path TEXT DEFAULT '/tmp',
+                    remote_file_name TEXT,
+                    pre_script TEXT,
+                    post_script TEXT,
+                    pre_script_ids TEXT,
+                    post_script_ids TEXT,
+                    create_time INTEGER
+                )
+            """.trimIndent()
+            )
+            
             // 迁移：添加 use_local_key 列（如果不存在）
             try {
                 stmt.executeUpdate("ALTER TABLE ssh_config ADD COLUMN use_local_key INTEGER DEFAULT 0")
             } catch (_: Exception) {
                 // 列已存在，忽略
             }
+            
+            // 迁移：添加 upload_template 脚本ID列（如果不存在）
+            try {
+                stmt.executeUpdate("ALTER TABLE upload_template ADD COLUMN pre_script_ids TEXT")
+            } catch (_: Exception) {}
+            try {
+                stmt.executeUpdate("ALTER TABLE upload_template ADD COLUMN post_script_ids TEXT")
+            } catch (_: Exception) {}
         }
     }
 
@@ -274,6 +302,118 @@ object SshConfigService {
 
     fun removeScript(id: String) {
         connection.prepareStatement("DELETE FROM script_config WHERE id=?").use { stmt ->
+            stmt.setString(1, id)
+            stmt.executeUpdate()
+        }
+    }
+
+    // ========== 上传模板管理 ==========
+
+    fun getUploadTemplates(): List<UploadTemplate> {
+        val list = mutableListOf<UploadTemplate>()
+        connection.createStatement().use { stmt ->
+            stmt.executeQuery("SELECT * FROM upload_template ORDER BY group_name, name").use { rs ->
+                while (rs.next()) {
+                    list.add(
+                        UploadTemplate(
+                            id = rs.getString("id"),
+                            group = rs.getString("group_name") ?: "",
+                            name = rs.getString("name"),
+                            localPath = rs.getString("local_path") ?: "",
+                            sshConfigId = rs.getString("ssh_config_id") ?: "",
+                            remotePath = rs.getString("remote_path") ?: "/tmp",
+                            remoteFileName = rs.getString("remote_file_name") ?: "",
+                            preScript = rs.getString("pre_script") ?: "",
+                            postScript = rs.getString("post_script") ?: "",
+                            preScriptIds = try { rs.getString("pre_script_ids")?.split(",")?.filter { it.isNotEmpty() } ?: emptyList() } catch (_: Exception) { emptyList() },
+                            postScriptIds = try { rs.getString("post_script_ids")?.split(",")?.filter { it.isNotEmpty() } ?: emptyList() } catch (_: Exception) { emptyList() },
+                            createTime = rs.getLong("create_time")
+                        )
+                    )
+                }
+            }
+        }
+        return list
+    }
+
+    fun getUploadTemplatesByGroup(): Map<String, List<UploadTemplate>> {
+        return getUploadTemplates().groupBy { it.group.ifEmpty { "默认" } }
+    }
+
+    fun getUploadTemplateById(id: String): UploadTemplate? {
+        connection.prepareStatement("SELECT * FROM upload_template WHERE id=?").use { stmt ->
+            stmt.setString(1, id)
+            stmt.executeQuery().use { rs ->
+                if (rs.next()) {
+                    return UploadTemplate(
+                        id = rs.getString("id"),
+                        group = rs.getString("group_name") ?: "",
+                        name = rs.getString("name"),
+                        localPath = rs.getString("local_path") ?: "",
+                        sshConfigId = rs.getString("ssh_config_id") ?: "",
+                        remotePath = rs.getString("remote_path") ?: "/tmp",
+                        remoteFileName = rs.getString("remote_file_name") ?: "",
+                        preScript = rs.getString("pre_script") ?: "",
+                        postScript = rs.getString("post_script") ?: "",
+                        preScriptIds = try { rs.getString("pre_script_ids")?.split(",")?.filter { it.isNotEmpty() } ?: emptyList() } catch (_: Exception) { emptyList() },
+                        postScriptIds = try { rs.getString("post_script_ids")?.split(",")?.filter { it.isNotEmpty() } ?: emptyList() } catch (_: Exception) { emptyList() },
+                        createTime = rs.getLong("create_time")
+                    )
+                }
+            }
+        }
+        return null
+    }
+
+    fun addUploadTemplate(template: UploadTemplate) {
+        connection.prepareStatement(
+            """
+            INSERT INTO upload_template (id, group_name, name, local_path, ssh_config_id, 
+                remote_path, remote_file_name, pre_script, post_script, pre_script_ids, post_script_ids, create_time)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """.trimIndent()
+        ).use { stmt ->
+            stmt.setString(1, template.id)
+            stmt.setString(2, template.group)
+            stmt.setString(3, template.name)
+            stmt.setString(4, template.localPath)
+            stmt.setString(5, template.sshConfigId)
+            stmt.setString(6, template.remotePath)
+            stmt.setString(7, template.remoteFileName)
+            stmt.setString(8, template.preScript)
+            stmt.setString(9, template.postScript)
+            stmt.setString(10, template.preScriptIds.joinToString(","))
+            stmt.setString(11, template.postScriptIds.joinToString(","))
+            stmt.setLong(12, template.createTime)
+            stmt.executeUpdate()
+        }
+    }
+
+    fun updateUploadTemplate(template: UploadTemplate) {
+        connection.prepareStatement(
+            """
+            UPDATE upload_template SET group_name=?, name=?, local_path=?, ssh_config_id=?,
+                remote_path=?, remote_file_name=?, pre_script=?, post_script=?, pre_script_ids=?, post_script_ids=?
+            WHERE id=?
+        """.trimIndent()
+        ).use { stmt ->
+            stmt.setString(1, template.group)
+            stmt.setString(2, template.name)
+            stmt.setString(3, template.localPath)
+            stmt.setString(4, template.sshConfigId)
+            stmt.setString(5, template.remotePath)
+            stmt.setString(6, template.remoteFileName)
+            stmt.setString(7, template.preScript)
+            stmt.setString(8, template.postScript)
+            stmt.setString(9, template.preScriptIds.joinToString(","))
+            stmt.setString(10, template.postScriptIds.joinToString(","))
+            stmt.setString(11, template.id)
+            stmt.executeUpdate()
+        }
+    }
+
+    fun removeUploadTemplate(id: String) {
+        connection.prepareStatement("DELETE FROM upload_template WHERE id=?").use { stmt ->
             stmt.setString(1, id)
             stmt.executeUpdate()
         }

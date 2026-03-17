@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.lhstack"
-version = "1.1.5"
+version = "1.2.0"
 
 repositories {
     mavenLocal()
@@ -25,6 +25,12 @@ dependencies {
     testImplementation("org.jetbrains.kotlin:kotlin-test")
 }
 
+configurations.configureEach {
+    // IntelliJ 平台已经提供 SLF4J 绑定，插件再打入 API/bridge 会触发类加载冲突。
+    exclude(group = "org.slf4j", module = "slf4j-api")
+    exclude(group = "org.slf4j", module = "jcl-over-slf4j")
+}
+
 tasks {
     withType<JavaCompile> {
         sourceCompatibility = "17"
@@ -39,7 +45,7 @@ tasks {
 
     patchPluginXml {
         sinceBuild.set("223")
-        untilBuild.set("253.*")
+        untilBuild.set("261.*")
     }
 
     signPlugin {

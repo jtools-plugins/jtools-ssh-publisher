@@ -8,15 +8,20 @@ import com.intellij.openapi.ui.Messages
 import com.intellij.ui.CollectionComboBoxModel
 import com.intellij.ui.ToolbarDecorator
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.fileTypes.FileTypeManager
+import com.intellij.openapi.fileTypes.LanguageFileType
+import com.intellij.openapi.fileTypes.PlainTextFileType
 import com.intellij.openapi.util.Disposer
+import com.intellij.ui.JBSplitter
 import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.components.JBScrollPane
-import com.intellij.ui.components.JBTabbedPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.table.JBTable
 import com.intellij.util.ui.JBUI
+import com.lhstack.ssh.component.MultiLanguageTextField
 import com.lhstack.ssh.model.ScriptConfig
 import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.service.SshConfigService
@@ -38,7 +43,7 @@ class AddItemDialog(
     private val existingConfig: SshConfig? = null,
     private val defaultGroup: String? = null,
     private val onSaved: (() -> Unit)? = null
-) : DialogWrapper(project, true) {
+) : DialogWrapper(project, false) {  // 改为非模态对话框
 
     private val groupCombo = ComboBox<String>().apply { isEditable = true }
     private val nameField = JBTextField(existingConfig?.name ?: "")
@@ -65,10 +70,22 @@ class AddItemDialog(
     private lateinit var keyPanel: JPanel
     private lateinit var mainPanel: JPanel
 
-    private val preScriptsTableModel = ScriptTableModel()
-    private val postScriptsTableModel = ScriptTableModel()
-    private val preScriptsTable = JBTable(preScriptsTableModel)
-    private val postScriptsTable = JBTable(postScriptsTableModel)
+    // 脚本编辑器（Tab+列表+编辑器方式）
+    private val preScripts = mutableListOf<ScriptConfig>()
+    private val postScripts = mutableListOf<ScriptConfig>()
+    private lateinit var preScriptListModel: DefaultListModel<ScriptConfig>
+    private lateinit var postScriptListModel: DefaultListModel<ScriptConfig>
+    private lateinit var preScriptList: JBList<ScriptConfig>
+    private lateinit var postScriptList: JBList<ScriptConfig>
+    private lateinit var preScriptEditor: MultiLanguageTextField
+    private lateinit var postScriptEditor: MultiLanguageTextField
+    private lateinit var preScriptNameField: JBTextField
+    private lateinit var postScriptNameField: JBTextField
+    
+    private val shellFileType: LanguageFileType by lazy {
+        FileTypeManager.getInstance().getFileTypeByExtension("sh") as? LanguageFileType
+            ?: PlainTextFileType.INSTANCE
+    }
 
     init {
         title = if (existingConfig == null) "新建SSH配置" else "编辑SSH配置"
@@ -88,8 +105,8 @@ class AddItemDialog(
 
     private fun loadScripts() {
         existingConfig?.let { config ->
-            SshConfigService.getPreScripts(config.id).forEach { preScriptsTableModel.addScript(it) }
-            SshConfigService.getPostScripts(config.id).forEach { postScriptsTableModel.addScript(it) }
+            SshConfigService.getPreScripts(config.id).forEach { preScripts.add(it) }
+            SshConfigService.getPostScripts(config.id).forEach { postScripts.add(it) }
         }
     }
 
@@ -174,12 +191,12 @@ class AddItemDialog(
         updateAuthPanel()
         mainPanel.add(authContainer, gbc)
 
-        // 脚本Tab
+        // 脚本Tab（使用原生JTabbedPane避免边距问题）
         row++
         gbc.gridy = row; gbc.weighty = 1.0; gbc.fill = GridBagConstraints.BOTH
-        val scriptTabs = JBTabbedPane().apply {
-            addTab("前置脚本", createScriptPanel(preScriptsTable, preScriptsTableModel, ScriptConfig.ScriptType.PRE))
-            addTab("后置脚本", createScriptPanel(postScriptsTable, postScriptsTableModel, ScriptConfig.ScriptType.POST))
+        val scriptTabs = JTabbedPane(JTabbedPane.TOP).apply {
+            addTab("前置脚本", createScriptEditorPanel(ScriptConfig.ScriptType.PRE))
+            addTab("后置脚本", createScriptEditorPanel(ScriptConfig.ScriptType.POST))
         }
         mainPanel.add(scriptTabs, gbc)
 
@@ -194,7 +211,6 @@ class AddItemDialog(
 
         return JBScrollPane(mainPanel).apply {
             preferredSize = Dimension(620, 750)
-            border = JBUI.Borders.empty(5)
         }
     }
     
@@ -345,39 +361,151 @@ class AddItemDialog(
         mainPanel.repaint()
     }
 
-    private fun createScriptPanel(table: JBTable, model: ScriptTableModel, scriptType: ScriptConfig.ScriptType): JComponent {
-        table.setShowGrid(false)
-        table.tableHeader.reorderingAllowed = false
-        table.columnModel.getColumn(0).preferredWidth = 40
-        table.columnModel.getColumn(0).maxWidth = 40
-        table.columnModel.getColumn(1).preferredWidth = 120
-        table.rowHeight = 24
-
-        return ToolbarDecorator.createDecorator(table)
+    /**
+     * 创建脚本编辑面板（列表+编辑器方式）
+     */
+    private fun createScriptEditorPanel(scriptType: ScriptConfig.ScriptType): JComponent {
+        val scripts = if (scriptType == ScriptConfig.ScriptType.PRE) preScripts else postScripts
+        val listModel = DefaultListModel<ScriptConfig>().apply {
+            scripts.forEach { addElement(it) }
+        }
+        val scriptList = JBList(listModel).apply {
+            cellRenderer = ScriptListCellRenderer()
+            selectionMode = ListSelectionModel.SINGLE_SELECTION
+        }
+        
+        val nameField = JBTextField()
+        val editor = MultiLanguageTextField(shellFileType, project, "#!/bin/bash\n", isLineNumbersShown = true)
+        Disposer.register(disposable, editor)
+        
+        // 保存引用
+        if (scriptType == ScriptConfig.ScriptType.PRE) {
+            preScriptListModel = listModel
+            preScriptList = scriptList
+            preScriptEditor = editor
+            preScriptNameField = nameField
+        } else {
+            postScriptListModel = listModel
+            postScriptList = scriptList
+            postScriptEditor = editor
+            postScriptNameField = nameField
+        }
+        
+        // 右侧编辑区域
+        val editorPanel = JPanel(BorderLayout()).apply {
+            // 顶部：名称
+            val topPanel = JPanel(BorderLayout()).apply {
+                add(JBLabel("名称:"), BorderLayout.WEST)
+                add(nameField, BorderLayout.CENTER)
+            }
+            add(topPanel, BorderLayout.NORTH)
+            
+            // 中间：编辑器
+            add(editor.apply { 
+                preferredSize = Dimension(350, 200)
+                minimumSize = Dimension(200, 100)
+            }, BorderLayout.CENTER)
+        }
+        
+        // 左侧列表面板（带工具栏，禁用上下移动按钮）
+        val listPanel = ToolbarDecorator.createDecorator(scriptList)
             .setAddAction {
-                ScriptEditDialog(project, null, scriptType).let { dialog ->
-                    if (dialog.showAndGet()) {
-                        dialog.getScript()?.let { model.addScript(it) }
-                    }
-                }
+                val newScript = ScriptConfig(
+                    id = System.currentTimeMillis().toString(),
+                    sshConfigId = existingConfig?.id ?: "",
+                    name = "新脚本",
+                    scriptType = scriptType,
+                    content = "#!/bin/bash\n",
+                    enabled = true
+                )
+                scripts.add(newScript)
+                listModel.addElement(newScript)
+                scriptList.selectedIndex = listModel.size() - 1
             }
             .setRemoveAction {
-                val row = table.selectedRow
-                if (row >= 0) model.removeScript(row)
-            }
-            .setEditAction {
-                val row = table.selectedRow
-                if (row >= 0) {
-                    val script = model.getScript(row)
-                    ScriptEditDialog(project, script, scriptType).let { dialog ->
-                        if (dialog.showAndGet()) {
-                            dialog.getScript()?.let { model.updateScript(row, it) }
-                        }
+                val selectedIndex = scriptList.selectedIndex
+                if (selectedIndex >= 0) {
+                    scripts.removeAt(selectedIndex)
+                    listModel.remove(selectedIndex)
+                    // 选中前一个或后一个
+                    if (listModel.size() > 0) {
+                        scriptList.selectedIndex = minOf(selectedIndex, listModel.size() - 1)
                     }
                 }
             }
-            .setPreferredSize(Dimension(450, 120))
+            .disableUpDownActions()
+            .setPreferredSize(Dimension(150, 200))
             .createPanel()
+        
+        // 列表选择监听
+        scriptList.addListSelectionListener { e ->
+            if (!e.valueIsAdjusting) {
+                val selectedIndex = scriptList.selectedIndex
+                if (selectedIndex >= 0 && selectedIndex < scripts.size) {
+                    val script = scripts[selectedIndex]
+                    nameField.text = script.name
+                    editor.text = script.content
+                }
+            }
+        }
+        
+        // 编辑器内容变化监听（自动保存到脚本对象）
+        editor.document.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
+            override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
+                val selectedIndex = scriptList.selectedIndex
+                if (selectedIndex >= 0 && selectedIndex < scripts.size) {
+                    scripts[selectedIndex] = scripts[selectedIndex].copy(content = editor.text)
+                }
+            }
+        })
+        
+        // 名称变化监听
+        nameField.document.addDocumentListener(object : javax.swing.event.DocumentListener {
+            override fun insertUpdate(e: javax.swing.event.DocumentEvent?) = updateName()
+            override fun removeUpdate(e: javax.swing.event.DocumentEvent?) = updateName()
+            override fun changedUpdate(e: javax.swing.event.DocumentEvent?) = updateName()
+            
+            private fun updateName() {
+                val selectedIndex = scriptList.selectedIndex
+                if (selectedIndex >= 0 && selectedIndex < scripts.size) {
+                    scripts[selectedIndex] = scripts[selectedIndex].copy(name = nameField.text)
+                    listModel.setElementAt(scripts[selectedIndex], selectedIndex)
+                }
+            }
+        })
+        
+        // 初始选中第一个
+        if (listModel.size() > 0) {
+            scriptList.selectedIndex = 0
+        }
+        
+        // 使用分割面板
+        return JBSplitter(false).apply {
+            firstComponent = listPanel
+            secondComponent = editorPanel
+            proportion = 0.3f
+            dividerWidth = 3
+        }
+    }
+    
+    /**
+     * 脚本列表渲染器
+     */
+    private class ScriptListCellRenderer : DefaultListCellRenderer() {
+        override fun getListCellRendererComponent(
+            list: JList<*>?,
+            value: Any?,
+            index: Int,
+            isSelected: Boolean,
+            cellHasFocus: Boolean
+        ): java.awt.Component {
+            super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
+            if (value is ScriptConfig) {
+                text = value.name
+                icon = AllIcons.Nodes.Function
+            }
+            return this
+        }
     }
 
     private fun buildConfig(): SshConfig {
@@ -455,10 +583,10 @@ class AddItemDialog(
             }
         }
 
-        preScriptsTableModel.getScripts().forEach {
+        preScripts.forEach {
             SshConfigService.addScript(it.copy(sshConfigId = config.id))
         }
-        postScriptsTableModel.getScripts().forEach {
+        postScripts.forEach {
             SshConfigService.addScript(it.copy(sshConfigId = config.id))
         }
 
@@ -467,55 +595,7 @@ class AddItemDialog(
     }
 }
 
-class ScriptTableModel : AbstractTableModel() {
-    private val scripts = mutableListOf<ScriptConfig>()
-    private val columns = arrayOf("启用", "名称", "内容预览")
-
-    override fun getRowCount() = scripts.size
-    override fun getColumnCount() = columns.size
-    override fun getColumnName(column: Int) = columns[column]
-
-    override fun getColumnClass(columnIndex: Int): Class<*> {
-        return if (columnIndex == 0) java.lang.Boolean::class.java else String::class.java
-    }
-
-    override fun isCellEditable(rowIndex: Int, columnIndex: Int) = columnIndex == 0
-
-    override fun getValueAt(rowIndex: Int, columnIndex: Int): Any {
-        val script = scripts[rowIndex]
-        return when (columnIndex) {
-            0 -> script.enabled
-            1 -> script.name
-            2 -> script.content.replace("\n", " ").take(50)
-            else -> ""
-        }
-    }
-
-    override fun setValueAt(aValue: Any?, rowIndex: Int, columnIndex: Int) {
-        if (columnIndex == 0 && aValue is Boolean) {
-            scripts[rowIndex] = scripts[rowIndex].copy(enabled = aValue)
-            fireTableCellUpdated(rowIndex, columnIndex)
-        }
-    }
-
-    fun addScript(script: ScriptConfig) {
-        scripts.add(script)
-        fireTableRowsInserted(scripts.size - 1, scripts.size - 1)
-    }
-
-    fun removeScript(row: Int) {
-        scripts.removeAt(row)
-        fireTableRowsDeleted(row, row)
-    }
-
-    fun updateScript(row: Int, script: ScriptConfig) {
-        scripts[row] = script
-        fireTableRowsUpdated(row, row)
-    }
-
-    fun getScript(row: Int) = scripts[row]
-    fun getScripts() = scripts.toList()
-}
+// ScriptEditDialog 保留用于其他地方可能的使用
 
 class ScriptEditDialog(
     private val project: Project,

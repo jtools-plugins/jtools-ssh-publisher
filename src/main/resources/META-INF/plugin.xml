@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.lhstack.ssh-publisher</id>
     <name>JTools SSH Publisher</name>
-    <version>1.1.5</version>
+    <version>1.2.0</version>
     <vendor email="lhstack@foxmail.com" url="https://github.com/lhstack">lhstack</vendor>
 
     <description><![CDATA[
@@ -17,10 +17,12 @@
     <h4>SSH Connection / SSH 连接</h4>
     <ul>
         <li>Password & private key authentication / 密码和密钥认证</li>
-        <li><b>Use local key (~/.ssh/id_rsa) / 使用本地默认密钥</b></li>
-        <li><b>Load key from file picker / 从文件选择器加载密钥</b></li>
+        <li>Use local key (~/.ssh/id_rsa) / 使用本地默认密钥</li>
+        <li>Load key from file picker / 从文件选择器加载密钥</li>
         <li>Connection testing / 连接测试</li>
         <li>Heartbeat keep-alive / 心跳保活</li>
+        <li><b>Pre/Post scripts with list+editor UI / 前置/后置脚本（列表+编辑器方式）</b></li>
+        <li><b>Non-modal edit dialog / 非模态编辑对话框</b></li>
     </ul>
 
     <h4>Terminal / 终端</h4>
@@ -28,23 +30,33 @@
         <li>JediTerm-based emulator / 基于 JediTerm</li>
         <li>IDEA theme adaptation / 适配 IDEA 主题</li>
         <li>Chinese font support / 中文支持</li>
+        <li>Large text paste stability improvements / 大文本粘贴稳定性增强</li>
+        <li>PTY resize sync for editors like vi / 支持 vi 等全屏程序窗口尺寸同步</li>
+        <li>macOS input method compatibility fix / 修复 macOS 输入法兼容问题</li>
         <li>Tab drag reorder / Tab 拖拽排序</li>
+        <li>Cross-container Tab drag & drop / 跨容器 Tab 拖拽移动</li>
         <li>Split view (right/down) / 分屏显示</li>
-        <li><b>System monitor bar (CPU/Memory/Disk/Process) / 系统监控状态栏</b></li>
+        <li>Unlimited split nesting / 无限层级分屏</li>
+        <li>Focus-based Tab placement / 基于焦点添加新 Tab</li>
+        <li>System monitor bar (CPU/Memory/Disk/Process) / 系统监控状态栏</li>
     </ul>
 
     <h4>File Browser (SFTP) / 文件浏览器</h4>
     <ul>
         <li>Remote file explorer / 远程文件浏览</li>
         <li>Upload/Download with progress / 上传下载带进度</li>
+        <li>Batch upload to current/selected directory / 批量上传到当前或所选目录</li>
+        <li>Drag local files/directories to upload recursively / 支持拖拽本地文件和目录递归上传</li>
+        <li>Remote tree drag move / 远程文件树内拖拽移动</li>
+        <li>Multi-select recursive delete / 多选递归批量删除</li>
         <li>Create folder & file / 新建文件夹和文件</li>
         <li>Rename, delete / 重命名、删除</li>
-        <li><b>Double-click to edit in IDEA / 双击在 IDEA 中编辑</b></li>
-        <li><b>Auto-sync on save with notification / 保存时自动同步（带通知）</b></li>
-        <li><b>Auto-reconnect on disconnect / 断线自动重连</b></li>
-        <li><b>IDEA Local History support / 支持本地历史记录</b></li>
-        <li><b>Download file rename detection / 下载文件重名检测</b></li>
-        <li><b>System monitor bar (CPU/Memory/Disk/Process) / 系统监控状态栏</b></li>
+        <li>Double-click to edit in IDEA / 双击在 IDEA 中编辑</li>
+        <li>Auto-sync on save with notification / 保存时自动同步（带通知）</li>
+        <li>Auto-reconnect on disconnect / 断线自动重连</li>
+        <li>IDEA Local History support / 支持本地历史记录</li>
+        <li>Download file rename detection / 下载文件重名检测</li>
+        <li>System monitor bar (CPU/Memory/Disk/Process) / 系统监控状态栏</li>
         <li>File properties view / 文件属性查看</li>
         <li>Quick search / 快速搜索</li>
     </ul>
@@ -60,10 +72,32 @@
 
     <h4>Batch Upload / 批量上传</h4>
     <ul>
-        <li>Upload to multiple servers / 上传到多台服务器</li>
+        <li><b>Multi-file upload to multiple servers / 多文件上传到多台服务器</b></li>
+        <li><b>Independent config per file (server, path, scripts) / 每个文件独立配置</b></li>
         <li>Upload queue management / 上传队列管理</li>
         <li>Pre/Post scripts / 前置/后置脚本</li>
+        <li>Temporary scripts / 临时脚本</li>
         <li>Custom remote filename / 自定义远程文件名</li>
+    </ul>
+
+    <h4>Upload Templates / 上传模板</h4>
+    <ul>
+        <li><b>Save upload tasks as templates / 保存上传任务为模板</b></li>
+        <li><b>Group management / 分组管理</b></li>
+        <li>Configure local file, server, remote path / 配置本地文件、服务器、远程路径</li>
+        <li>Custom remote filename / 自定义远程文件名</li>
+        <li><b>Select server scripts or write temp scripts / 选择服务器脚本或临时脚本</b></li>
+        <li><b>Double-click to execute / 双击执行</b></li>
+        <li><b>Multi-select batch execution / 多选批量执行</b></li>
+        <li>Copy, edit, delete templates / 复制、编辑、删除模板</li>
+        <li><b>Export/Import includes templates / 导出导入包含模板</b></li>
+    </ul>
+
+    <h4>Config Management / 配置管理</h4>
+    <ul>
+        <li><b>Export all or selected configs / 导出全部或选择性导出</b></li>
+        <li><b>Import with overwrite/skip option / 导入支持覆盖或跳过</b></li>
+        <li><b>Preserve expand state on refresh / 刷新时保持展开状态</b></li>
     </ul>
 
     <h4>Data Storage / 数据存储</h4>
@@ -71,6 +105,62 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>1.2.0</b>
+    <ul>
+        <li>新增：文件系统支持批量上传到当前目录或所选目录</li>
+        <li>新增：支持拖拽本地单文件、多文件和目录到远程文件树递归上传</li>
+        <li>新增：支持远程文件树内拖拽移动文件和目录</li>
+        <li>新增：文件系统支持多选递归批量删除</li>
+        <li>优化：批量上传完成后自动刷新目标目录</li>
+        <li>优化：批量上传和批量删除图标区分显示</li>
+        <li>修复：SSH 终端窗口尺寸变化时 vi 等长文件浏览黑屏问题</li>
+        <li>修复：终端大文本粘贴显示错乱、内容仿佛被截断的问题</li>
+        <li>修复：macOS 下终端输入法相关空指针异常</li>
+        <li>修复：SQLite JDBC 初始化时的 SLF4J 类加载冲突</li>
+        <li>修复：文件系统目录快速双击时偶发无法访问的问题</li>
+    </ul>
+
+    <b>1.1.9</b>
+    <ul>
+        <li>新增：上传模板功能（保存常用上传任务为模板，一键执行）</li>
+        <li>新增：模板分组管理</li>
+        <li>新增：模板支持选择服务器脚本和临时脚本</li>
+        <li>新增：模板支持多选批量执行</li>
+        <li>新增：导出/导入时包含模板配置</li>
+    </ul>
+
+    <b>1.1.8</b>
+    <ul>
+        <li>新增：配置导出/导入功能（支持全部导出或选择性导出）</li>
+        <li>新增：批量上传增强（多文件独立配置目标服务器、远程路径和脚本）</li>
+        <li>优化：SSH连接编辑对话框改为非模态</li>
+        <li>优化：前置/后置脚本编辑改为列表+编辑器方式</li>
+        <li>优化：刷新SSH连接列表时保持展开状态</li>
+        <li>修复：全部展开/全部收起按钮功能</li>
+        <li>修复：上传任务添加成功提示不显示的问题</li>
+        <li>修复：关闭插件窗口后重新打开，传输任务无法执行的问题</li>
+    </ul>
+
+    <b>1.1.7</b>
+    <ul>
+        <li>新增：跨分屏容器 Tab 拖拽移动</li>
+        <li>新增：跨容器拖拽支持指定位置插入</li>
+        <li>新增：拖拽时目标容器高亮提示</li>
+        <li>新增：基于焦点确定新 Tab 添加位置</li>
+        <li>修复：新建终端/文件系统未添加到焦点容器的问题</li>
+    </ul>
+
+    <b>1.1.6</b>
+    <ul>
+        <li>新增：系统监控状态栏（SSH终端和文件系统底部显示CPU/内存/磁盘/进程数）</li>
+        <li>新增：每5秒自动刷新系统监控数据</li>
+        <li>新增：资源使用超阈值时显示警告颜色</li>
+        <li>新增：支持使用本地默认密钥（~/.ssh/id_rsa）</li>
+        <li>新增：支持从文件选择器加载任意密钥文件（PEM/二进制格式）</li>
+        <li>优化：认证方式切换时动态调整面板高度</li>
+        <li>优化：用户名字段移至公共区域，两种认证方式共享</li>
+    </ul>
+
     <b>1.1.5</b>
     <ul>
         <li>新增：系统监控状态栏（SSH终端和文件系统底部显示CPU/内存/磁盘/进程数）</li>
@@ -139,7 +229,7 @@
     </ul>
     ]]></change-notes>
 
-    <idea-version since-build="223" until-build="253.*"/>
+    <idea-version since-build="223" until-build="261.*"/>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>org.jetbrains.plugins.terminal</depends>

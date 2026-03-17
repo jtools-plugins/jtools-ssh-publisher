@@ -17,6 +17,10 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
 
     private var rootContainer: TabContainer
     private var activeContainer: TabContainer? = null
+    
+    // 跨容器拖拽状态
+    internal var draggedTab: TabInfo? = null
+    internal var dragSourceContainer: TabContainer? = null
 
     init {
         Disposer.register(parentDisposable, this)
@@ -26,9 +30,23 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
     }
 
     fun addTab(title: String, icon: Icon, component: JComponent, tooltip: String) {
-        // 添加到当前活动的容器，如果没有则添加到第一个可用容器
-        val target = activeContainer ?: findFirstLeafContainer(rootContainer) ?: rootContainer
+        // 添加到当前活动的容器，确保是叶子容器（未分屏的）
+        val target = findLeafContainer(activeContainer) 
+            ?: findFirstLeafContainer(rootContainer) 
+            ?: rootContainer
         target.addTab(TabInfo(title, icon, component, tooltip))
+    }
+    
+    /**
+     * 如果容器已分屏，返回其第一个叶子容器；否则返回自身
+     */
+    private fun findLeafContainer(container: TabContainer?): TabContainer? {
+        container ?: return null
+        return if (container.isSplit()) {
+            findLeafContainer(container.getFirstChild()) ?: findLeafContainer(container.getSecondChild())
+        } else {
+            container
+        }
     }
 
     private fun findFirstLeafContainer(container: TabContainer): TabContainer? {
@@ -46,7 +64,10 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
     }
 
     internal fun setActiveContainer(container: TabContainer?) {
-        activeContainer = container
+        // 只有叶子容器（未分屏）才能成为活动容器
+        if (container == null || !container.isSplit()) {
+            activeContainer = container
+        }
     }
 
     internal fun replaceRoot(newRoot: TabContainer) {
@@ -59,6 +80,35 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
     }
 
     internal fun getRootContainer() = rootContainer
+    
+    /**
+     * 查找屏幕坐标下的叶子容器
+     */
+    internal fun findContainerAt(screenPoint: Point): TabContainer? {
+        return findContainerAtRecursive(rootContainer, screenPoint)
+    }
+    
+    private fun findContainerAtRecursive(container: TabContainer, screenPoint: Point): TabContainer? {
+        if (!container.isShowing) return null
+        
+        val containerBounds = Rectangle(container.locationOnScreen, container.size)
+        if (!containerBounds.contains(screenPoint)) return null
+        
+        return if (container.isSplit()) {
+            findContainerAtRecursive(container.getFirstChild()!!, screenPoint)
+                ?: findContainerAtRecursive(container.getSecondChild()!!, screenPoint)
+        } else {
+            container
+        }
+    }
+    
+    /**
+     * 清除拖拽状态
+     */
+    internal fun clearDragState() {
+        draggedTab = null
+        dragSourceContainer = null
+    }
 
     data class TabInfo(val title: String, val icon: Icon, val component: JComponent, val tooltip: String)
 
@@ -71,11 +121,17 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
         private var secondChild: TabContainer? = null
         private var parentContainer: TabContainer? = null
         private var dragIndex = -1
+        
+        // 拖拽目标高亮
+        private var isDropTarget = false
+        private val dropHighlightBorder = BorderFactory.createLineBorder(UIManager.getColor("Component.focusColor") ?: Color.BLUE, 2)
+        private val normalBorder: javax.swing.border.Border? = null
 
         init {
             add(tabbedPane, BorderLayout.CENTER)
             setupDragReorder()
             setupTabEvents()
+            setupDropTarget()
         }
 
         fun isSplit() = splitPane != null
@@ -87,27 +143,125 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
             tabbedPane.addMouseListener(object : MouseAdapter() {
                 override fun mousePressed(e: MouseEvent) {
                     dragIndex = tabbedPane.indexAtLocation(e.x, e.y)
+                    if (dragIndex >= 0 && dragIndex < tabs.size) {
+                        // 开始跨容器拖拽
+                        panel?.draggedTab = tabs[dragIndex]
+                        panel?.dragSourceContainer = this@TabContainer
+                    }
                     // 设置为活动容器
                     panel?.setActiveContainer(this@TabContainer)
                 }
                 override fun mouseReleased(e: MouseEvent) {
+                    handleDrop(e)
                     dragIndex = -1
                     tabbedPane.cursor = Cursor.getDefaultCursor()
+                    panel?.clearDragState()
+                    clearAllDropHighlights()
                 }
             })
 
             tabbedPane.addMouseMotionListener(object : MouseMotionAdapter() {
                 override fun mouseDragged(e: MouseEvent) {
                     if (dragIndex < 0 || dragIndex >= tabs.size) return
-                    val targetIndex = tabbedPane.indexAtLocation(e.x, e.y)
-                    if (targetIndex >= 0 && targetIndex != dragIndex && targetIndex < tabs.size) {
-                        val tab = tabs.removeAt(dragIndex)
-                        tabs.add(targetIndex, tab)
-                        rebuildTabs()
-                        tabbedPane.selectedIndex = targetIndex
-                        dragIndex = targetIndex
+                    
+                    // 获取屏幕坐标
+                    val screenPoint = e.locationOnScreen
+                    val targetContainer = panel?.findContainerAt(screenPoint)
+                    
+                    // 更新高亮状态
+                    updateDropHighlight(targetContainer)
+                    
+                    if (targetContainer == this@TabContainer) {
+                        // 同容器内拖拽排序
+                        val targetIndex = tabbedPane.indexAtLocation(e.x, e.y)
+                        if (targetIndex >= 0 && targetIndex != dragIndex && targetIndex < tabs.size) {
+                            val tab = tabs.removeAt(dragIndex)
+                            tabs.add(targetIndex, tab)
+                            rebuildTabs()
+                            tabbedPane.selectedIndex = targetIndex
+                            dragIndex = targetIndex
+                        }
                     }
+                    
                     tabbedPane.cursor = Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR)
+                }
+            })
+        }
+        
+        private fun handleDrop(e: MouseEvent) {
+            val draggedTab = panel?.draggedTab ?: return
+            val sourceContainer = panel?.dragSourceContainer ?: return
+            
+            // 获取屏幕坐标找到目标容器
+            val screenPoint = e.locationOnScreen
+            val targetContainer = panel?.findContainerAt(screenPoint)
+            
+            // 如果目标容器不是源容器，执行跨容器移动
+            if (targetContainer != null && targetContainer != sourceContainer) {
+                // 从源容器移除
+                val sourceIndex = sourceContainer.tabs.indexOf(draggedTab)
+                if (sourceIndex >= 0) {
+                    sourceContainer.tabs.removeAt(sourceIndex)
+                    sourceContainer.tabbedPane.removeTabAt(sourceIndex)
+                    
+                    // 计算目标位置：将屏幕坐标转换为目标容器的本地坐标
+                    val targetLocalPoint = Point(screenPoint).apply {
+                        SwingUtilities.convertPointFromScreen(this, targetContainer.tabbedPane)
+                    }
+                    val targetIndex = targetContainer.tabbedPane.indexAtLocation(targetLocalPoint.x, targetLocalPoint.y)
+                    
+                    // 插入到目标容器的指定位置
+                    targetContainer.insertTab(draggedTab, targetIndex)
+                    
+                    // 如果源容器空了，尝试合并
+                    if (sourceContainer.tabs.isEmpty()) {
+                        sourceContainer.tryMergeWithSibling()
+                    }
+                }
+            }
+        }
+        
+        private fun updateDropHighlight(targetContainer: TabContainer?) {
+            // 清除所有高亮
+            clearAllDropHighlights()
+            
+            // 如果目标容器不是源容器，高亮目标
+            val sourceContainer = panel?.dragSourceContainer
+            if (targetContainer != null && targetContainer != sourceContainer) {
+                targetContainer.setDropHighlight(true)
+            }
+        }
+        
+        private fun clearAllDropHighlights() {
+            panel?.getRootContainer()?.clearDropHighlightRecursive()
+        }
+        
+        internal fun clearDropHighlightRecursive() {
+            setDropHighlight(false)
+            firstChild?.clearDropHighlightRecursive()
+            secondChild?.clearDropHighlightRecursive()
+        }
+        
+        private fun setDropHighlight(highlight: Boolean) {
+            if (isDropTarget != highlight) {
+                isDropTarget = highlight
+                tabbedPane.border = if (highlight) dropHighlightBorder else normalBorder
+                tabbedPane.repaint()
+            }
+        }
+        
+        private fun setupDropTarget() {
+            // 允许在空白区域也能接收拖拽
+            tabbedPane.addMouseListener(object : MouseAdapter() {
+                override fun mouseEntered(e: MouseEvent) {
+                    val draggedTab = panel?.draggedTab
+                    val sourceContainer = panel?.dragSourceContainer
+                    if (draggedTab != null && sourceContainer != this@TabContainer) {
+                        setDropHighlight(true)
+                    }
+                }
+                override fun mouseExited(e: MouseEvent) {
+                    setDropHighlight(false)
                 }
             })
         }
@@ -173,6 +327,43 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
             tabbedPane.addTab(tab.title, tab.icon, tab.component, tab.tooltip)
             tabbedPane.setTabComponentAt(index, createTabComponent(tab))
             tabbedPane.selectedIndex = index
+            panel?.setActiveContainer(this)
+            
+            // 监听组件及其子组件的焦点，确保焦点时更新活动容器
+            setupFocusTracking(tab.component)
+        }
+        
+        /**
+         * 递归为组件及其子组件添加焦点监听
+         */
+        private fun setupFocusTracking(component: Component) {
+            component.addFocusListener(object : java.awt.event.FocusAdapter() {
+                override fun focusGained(e: java.awt.event.FocusEvent?) {
+                    panel?.setActiveContainer(this@TabContainer)
+                }
+            })
+            if (component is Container) {
+                component.components.forEach { setupFocusTracking(it) }
+                // 监听后续添加的子组件
+                component.addContainerListener(object : java.awt.event.ContainerAdapter() {
+                    override fun componentAdded(e: java.awt.event.ContainerEvent) {
+                        setupFocusTracking(e.child)
+                    }
+                })
+            }
+        }
+        
+        /**
+         * 在指定位置插入Tab
+         * @param tab 要插入的Tab
+         * @param index 目标位置，-1 或超出范围则追加到末尾
+         */
+        fun insertTab(tab: TabInfo, index: Int) {
+            val insertIndex = if (index < 0 || index > tabs.size) tabs.size else index
+            tabs.add(insertIndex, tab)
+            tabbedPane.insertTab(tab.title, tab.icon, tab.component, tab.tooltip, insertIndex)
+            tabbedPane.setTabComponentAt(insertIndex, createTabComponent(tab))
+            tabbedPane.selectedIndex = insertIndex
             panel?.setActiveContainer(this)
         }
 

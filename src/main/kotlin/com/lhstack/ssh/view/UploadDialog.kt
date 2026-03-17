@@ -65,11 +65,12 @@ class UploadDialog(
     }
 
     private fun loadScripts() {
+        // 默认不选中脚本
         SshConfigService.getPreScripts(config.id).forEach {
-            preScriptsModel.addScript(it, it.enabled)
+            preScriptsModel.addScript(it, false)
         }
         SshConfigService.getPostScripts(config.id).forEach {
-            postScriptsModel.addScript(it, it.enabled)
+            postScriptsModel.addScript(it, false)
         }
     }
 
