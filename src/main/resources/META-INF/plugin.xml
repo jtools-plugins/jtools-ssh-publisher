@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.lhstack.ssh-publisher</id>
     <name>JTools SSH Publisher</name>
-    <version>1.1.9</version>
+    <version>1.2.0</version>
     <vendor email="lhstack@foxmail.com" url="https://github.com/lhstack">lhstack</vendor>
 
     <description><![CDATA[
@@ -30,6 +30,9 @@
         <li>JediTerm-based emulator / 基于 JediTerm</li>
         <li>IDEA theme adaptation / 适配 IDEA 主题</li>
         <li>Chinese font support / 中文支持</li>
+        <li>Large text paste stability improvements / 大文本粘贴稳定性增强</li>
+        <li>PTY resize sync for editors like vi / 支持 vi 等全屏程序窗口尺寸同步</li>
+        <li>macOS input method compatibility fix / 修复 macOS 输入法兼容问题</li>
         <li>Tab drag reorder / Tab 拖拽排序</li>
         <li>Cross-container Tab drag & drop / 跨容器 Tab 拖拽移动</li>
         <li>Split view (right/down) / 分屏显示</li>
@@ -42,6 +45,10 @@
     <ul>
         <li>Remote file explorer / 远程文件浏览</li>
         <li>Upload/Download with progress / 上传下载带进度</li>
+        <li>Batch upload to current/selected directory / 批量上传到当前或所选目录</li>
+        <li>Drag local files/directories to upload recursively / 支持拖拽本地文件和目录递归上传</li>
+        <li>Remote tree drag move / 远程文件树内拖拽移动</li>
+        <li>Multi-select recursive delete / 多选递归批量删除</li>
         <li>Create folder & file / 新建文件夹和文件</li>
         <li>Rename, delete / 重命名、删除</li>
         <li>Double-click to edit in IDEA / 双击在 IDEA 中编辑</li>
@@ -98,6 +105,21 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>1.2.0</b>
+    <ul>
+        <li>新增：文件系统支持批量上传到当前目录或所选目录</li>
+        <li>新增：支持拖拽本地单文件、多文件和目录到远程文件树递归上传</li>
+        <li>新增：支持远程文件树内拖拽移动文件和目录</li>
+        <li>新增：文件系统支持多选递归批量删除</li>
+        <li>优化：批量上传完成后自动刷新目标目录</li>
+        <li>优化：批量上传和批量删除图标区分显示</li>
+        <li>修复：SSH 终端窗口尺寸变化时 vi 等长文件浏览黑屏问题</li>
+        <li>修复：终端大文本粘贴显示错乱、内容仿佛被截断的问题</li>
+        <li>修复：macOS 下终端输入法相关空指针异常</li>
+        <li>修复：SQLite JDBC 初始化时的 SLF4J 类加载冲突</li>
+        <li>修复：文件系统目录快速双击时偶发无法访问的问题</li>
+    </ul>
+
     <b>1.1.9</b>
     <ul>
         <li>新增：上传模板功能（保存常用上传任务为模板，一键执行）</li>
