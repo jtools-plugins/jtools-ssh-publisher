@@ -1,6 +1,5 @@
 package com.lhstack.ssh.view
 
-import com.intellij.icons.AllIcons
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
@@ -21,7 +20,9 @@ import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.table.JBTable
 import com.intellij.util.ui.JBUI
+import com.lhstack.ssh.PluginIcons
 import com.lhstack.ssh.component.MultiLanguageTextField
+import com.lhstack.ssh.model.JumpHostConfig
 import com.lhstack.ssh.model.ScriptConfig
 import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.service.SshConfigService
@@ -73,10 +74,13 @@ class AddItemDialog(
     // 脚本编辑器（Tab+列表+编辑器方式）
     private val preScripts = mutableListOf<ScriptConfig>()
     private val postScripts = mutableListOf<ScriptConfig>()
+    private val jumpHosts = mutableListOf<JumpHostConfig>()
     private lateinit var preScriptListModel: DefaultListModel<ScriptConfig>
     private lateinit var postScriptListModel: DefaultListModel<ScriptConfig>
     private lateinit var preScriptList: JBList<ScriptConfig>
     private lateinit var postScriptList: JBList<ScriptConfig>
+    private lateinit var jumpHostListModel: DefaultListModel<JumpHostConfig>
+    private lateinit var jumpHostList: JBList<JumpHostConfig>
     private lateinit var preScriptEditor: MultiLanguageTextField
     private lateinit var postScriptEditor: MultiLanguageTextField
     private lateinit var preScriptNameField: JBTextField
@@ -107,6 +111,7 @@ class AddItemDialog(
         existingConfig?.let { config ->
             SshConfigService.getPreScripts(config.id).forEach { preScripts.add(it) }
             SshConfigService.getPostScripts(config.id).forEach { postScripts.add(it) }
+            jumpHosts.addAll(config.jumpHosts)
         }
     }
 
@@ -191,6 +196,14 @@ class AddItemDialog(
         updateAuthPanel()
         mainPanel.add(authContainer, gbc)
 
+        row++
+        gbc.gridy = row
+        gbc.gridwidth = 2
+        gbc.weightx = 1.0
+        gbc.weighty = 0.0
+        gbc.fill = GridBagConstraints.BOTH
+        mainPanel.add(createJumpHostPanel(), gbc)
+
         // 脚本Tab（使用原生JTabbedPane避免边距问题）
         row++
         gbc.gridy = row; gbc.weighty = 1.0; gbc.fill = GridBagConstraints.BOTH
@@ -204,7 +217,7 @@ class AddItemDialog(
         row++
         gbc.gridy = row; gbc.weighty = 0.0; gbc.fill = GridBagConstraints.HORIZONTAL
         mainPanel.add(JPanel(BorderLayout()).apply {
-            add(JButton("测试连接", AllIcons.Actions.Execute).apply {
+            add(JButton("测试连接", PluginIcons.Execute).apply {
                 addActionListener { testConnection() }
             }, BorderLayout.EAST)
         }, gbc)
@@ -254,7 +267,7 @@ class AddItemDialog(
             add(JBLabel("私钥:"), g)
             g.gridx = 1; g.weightx = 1.0
             add(JButton("选择密钥文件...").apply {
-                icon = AllIcons.Actions.MenuOpen
+                icon = PluginIcons.Open
                 toolTipText = "从文件系统选择私钥文件"
                 addActionListener { selectKeyFile() }
             }, g)
@@ -487,6 +500,111 @@ class AddItemDialog(
             dividerWidth = 3
         }
     }
+
+    private fun createJumpHostPanel(): JComponent {
+        jumpHostListModel = DefaultListModel<JumpHostConfig>().apply {
+            jumpHosts.forEach { addElement(it) }
+        }
+        jumpHostList = JBList(jumpHostListModel).apply {
+            cellRenderer = JumpHostListCellRenderer()
+            selectionMode = ListSelectionModel.SINGLE_SELECTION
+            visibleRowCount = 4
+            addMouseListener(object : java.awt.event.MouseAdapter() {
+                override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                    if (e.clickCount == 2 && selectedIndex >= 0) {
+                        editJumpHost(selectedIndex)
+                    }
+                }
+            })
+        }
+
+        val buttonPanel = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+
+            add(JButton("新增", PluginIcons.Add).apply {
+                alignmentX = JComponent.LEFT_ALIGNMENT
+                addActionListener { addJumpHost() }
+            })
+            add(Box.createVerticalStrut(5))
+            add(JButton("编辑", PluginIcons.Edit).apply {
+                alignmentX = JComponent.LEFT_ALIGNMENT
+                addActionListener {
+                    if (jumpHostList.selectedIndex >= 0) {
+                        editJumpHost(jumpHostList.selectedIndex)
+                    }
+                }
+            })
+            add(Box.createVerticalStrut(5))
+            add(JButton("删除", PluginIcons.Delete).apply {
+                alignmentX = JComponent.LEFT_ALIGNMENT
+                addActionListener { removeSelectedJumpHost() }
+            })
+            add(Box.createVerticalStrut(5))
+            add(JButton("上移", PluginIcons.ExpandAll).apply {
+                alignmentX = JComponent.LEFT_ALIGNMENT
+                addActionListener { moveSelectedJumpHost(-1) }
+            })
+            add(Box.createVerticalStrut(5))
+            add(JButton("下移", PluginIcons.CollapseAll).apply {
+                alignmentX = JComponent.LEFT_ALIGNMENT
+                addActionListener { moveSelectedJumpHost(1) }
+            })
+        }
+
+        return JPanel(BorderLayout(8, 0)).apply {
+            border = BorderFactory.createTitledBorder("跳板链")
+            add(JBScrollPane(jumpHostList).apply {
+                preferredSize = Dimension(420, 120)
+            }, BorderLayout.CENTER)
+            add(buttonPanel, BorderLayout.EAST)
+        }
+    }
+
+    private fun addJumpHost() {
+        val dialog = JumpHostEditDialog(project, null)
+        if (dialog.showAndGet()) {
+            dialog.getJumpHost()?.let {
+                jumpHosts.add(it)
+                jumpHostListModel.addElement(it)
+                jumpHostList.selectedIndex = jumpHostListModel.size - 1
+            }
+        }
+    }
+
+    private fun editJumpHost(index: Int) {
+        if (index !in jumpHosts.indices) return
+        val dialog = JumpHostEditDialog(project, jumpHosts[index])
+        if (dialog.showAndGet()) {
+            dialog.getJumpHost()?.let {
+                jumpHosts[index] = it
+                jumpHostListModel.set(index, it)
+                jumpHostList.selectedIndex = index
+            }
+        }
+    }
+
+    private fun removeSelectedJumpHost() {
+        val index = jumpHostList.selectedIndex
+        if (index !in jumpHosts.indices) return
+        jumpHosts.removeAt(index)
+        jumpHostListModel.remove(index)
+        if (!jumpHostListModel.isEmpty) {
+            jumpHostList.selectedIndex = minOf(index, jumpHostListModel.size - 1)
+        }
+    }
+
+    private fun moveSelectedJumpHost(offset: Int) {
+        val currentIndex = jumpHostList.selectedIndex
+        if (currentIndex !in jumpHosts.indices) return
+        val targetIndex = currentIndex + offset
+        if (targetIndex !in jumpHosts.indices) return
+
+        val item = jumpHosts.removeAt(currentIndex)
+        jumpHosts.add(targetIndex, item)
+        jumpHostListModel.removeAllElements()
+        jumpHosts.forEach { jumpHostListModel.addElement(it) }
+        jumpHostList.selectedIndex = targetIndex
+    }
     
     /**
      * 脚本列表渲染器
@@ -502,7 +620,7 @@ class AddItemDialog(
             super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
             if (value is ScriptConfig) {
                 text = value.name
-                icon = AllIcons.Nodes.Function
+                icon = PluginIcons.Script
             }
             return this
         }
@@ -523,7 +641,8 @@ class AddItemDialog(
             },
             passphrase = String(passphraseField.password),
             remoteDir = remoteDirField.text.trim(),
-            useLocalKey = useLocalKeyCheckbox.isSelected
+            useLocalKey = useLocalKeyCheckbox.isSelected,
+            jumpHosts = jumpHosts.toList()
         )
     }
 
@@ -542,7 +661,7 @@ class AddItemDialog(
                     if (success) {
                         Messages.showInfoMessage(project, "连接成功!", "测试连接")
                     } else {
-                        Messages.showErrorDialog(project, "连接失败，请检查配置", "测试连接")
+                        Messages.showErrorDialog(project, manager.lastErrorMessage ?: "连接失败，请检查配置", "测试连接")
                     }
                 }
             } catch (e: Exception) {
@@ -595,7 +714,213 @@ class AddItemDialog(
     }
 }
 
+private class JumpHostListCellRenderer : DefaultListCellRenderer() {
+    override fun getListCellRendererComponent(
+        list: JList<*>?,
+        value: Any?,
+        index: Int,
+        isSelected: Boolean,
+        cellHasFocus: Boolean
+    ): java.awt.Component {
+        super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
+        if (value is JumpHostConfig) {
+            text = "${index + 1}. ${value.username}@${value.host}:${value.port} (${if (value.authType == SshConfig.AuthType.PASSWORD) "密码" else "密钥"})"
+            icon = PluginIcons.SshConnection
+        }
+        return this
+    }
+}
+
 // ScriptEditDialog 保留用于其他地方可能的使用
+
+private class JumpHostEditDialog(
+    private val project: Project,
+    private val existingJumpHost: JumpHostConfig?
+) : DialogWrapper(project, true) {
+
+    private val hostField = JBTextField(existingJumpHost?.host ?: "")
+    private val portField = JSpinner(SpinnerNumberModel(existingJumpHost?.port ?: 22, 1, 65535, 1))
+    private val usernameField = JBTextField(existingJumpHost?.username ?: "root")
+    private val passwordField = JBPasswordField().apply { text = existingJumpHost?.password ?: "" }
+    private val privateKeyArea = JBTextArea(existingJumpHost?.privateKey ?: "", 5, 30)
+    private val passphraseField = JBPasswordField().apply { text = existingJumpHost?.passphrase ?: "" }
+    private val useLocalKeyCheckbox = JCheckBox("使用本地密钥 (~/.ssh/id_rsa)").apply {
+        isSelected = existingJumpHost?.useLocalKey ?: false
+    }
+    private var currentAuthType = existingJumpHost?.authType ?: SshConfig.AuthType.PASSWORD
+    private lateinit var authContainer: JPanel
+
+    init {
+        title = if (existingJumpHost == null) "新增跳板机" else "编辑跳板机"
+        setOKButtonText("保存")
+        setCancelButtonText("取消")
+        init()
+    }
+
+    override fun createCenterPanel(): JComponent {
+        return JPanel(GridBagLayout()).apply {
+            val gbc = GridBagConstraints().apply {
+                fill = GridBagConstraints.HORIZONTAL
+                insets = JBUI.insets(4)
+                anchor = GridBagConstraints.NORTHWEST
+            }
+
+            gbc.gridx = 0
+            gbc.gridy = 0
+            gbc.weightx = 0.0
+            add(JBLabel("主机:"), gbc)
+            gbc.gridx = 1
+            gbc.weightx = 1.0
+            add(hostField, gbc)
+
+            gbc.gridx = 0
+            gbc.gridy = 1
+            gbc.weightx = 0.0
+            add(JBLabel("端口:"), gbc)
+            gbc.gridx = 1
+            gbc.weightx = 1.0
+            add(portField, gbc)
+
+            gbc.gridx = 0
+            gbc.gridy = 2
+            gbc.weightx = 0.0
+            add(JBLabel("用户名:"), gbc)
+            gbc.gridx = 1
+            gbc.weightx = 1.0
+            add(usernameField, gbc)
+
+            gbc.gridx = 0
+            gbc.gridy = 3
+            gbc.gridwidth = 2
+            val authTypePanel = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0)).apply {
+                val buttonGroup = ButtonGroup()
+                val passwordRadio = JRadioButton("密码认证").apply {
+                    isSelected = currentAuthType == SshConfig.AuthType.PASSWORD
+                    addActionListener { switchAuthType(SshConfig.AuthType.PASSWORD) }
+                }
+                val keyRadio = JRadioButton("密钥认证").apply {
+                    isSelected = currentAuthType == SshConfig.AuthType.KEY
+                    addActionListener { switchAuthType(SshConfig.AuthType.KEY) }
+                }
+                buttonGroup.add(passwordRadio)
+                buttonGroup.add(keyRadio)
+                add(passwordRadio)
+                add(Box.createHorizontalStrut(20))
+                add(keyRadio)
+            }
+            add(authTypePanel, gbc)
+
+            gbc.gridy = 4
+            authContainer = JPanel(BorderLayout()).apply {
+                border = JBUI.Borders.customLine(JBUI.CurrentTheme.CustomFrameDecorations.separatorForeground(), 1)
+            }
+            updateAuthPanel()
+            add(authContainer, gbc)
+
+            preferredSize = Dimension(480, 320)
+            border = JBUI.Borders.empty(10)
+        }
+    }
+
+    private fun switchAuthType(authType: SshConfig.AuthType) {
+        currentAuthType = authType
+        updateAuthPanel()
+    }
+
+    private fun updateAuthPanel() {
+        authContainer.removeAll()
+        authContainer.add(if (currentAuthType == SshConfig.AuthType.PASSWORD) createPasswordPanel() else createKeyPanel(), BorderLayout.CENTER)
+        authContainer.revalidate()
+        authContainer.repaint()
+    }
+
+    private fun createPasswordPanel(): JComponent {
+        return JPanel(GridBagLayout()).apply {
+            border = JBUI.Borders.empty(8)
+            val gbc = GridBagConstraints().apply {
+                fill = GridBagConstraints.HORIZONTAL
+                insets = JBUI.insets(4)
+            }
+            gbc.gridx = 0
+            gbc.gridy = 0
+            gbc.weightx = 0.0
+            add(JBLabel("密码:"), gbc)
+            gbc.gridx = 1
+            gbc.weightx = 1.0
+            add(passwordField, gbc)
+        }
+    }
+
+    private fun createKeyPanel(): JComponent {
+        return JPanel(GridBagLayout()).apply {
+            border = JBUI.Borders.empty(8)
+            val gbc = GridBagConstraints().apply {
+                fill = GridBagConstraints.HORIZONTAL
+                insets = JBUI.insets(4)
+                anchor = GridBagConstraints.WEST
+            }
+            gbc.gridx = 0
+            gbc.gridy = 0
+            gbc.gridwidth = 2
+            add(useLocalKeyCheckbox, gbc)
+
+            gbc.gridy = 1
+            gbc.gridwidth = 1
+            gbc.weightx = 0.0
+            add(JBLabel("私钥:"), gbc)
+            gbc.gridx = 1
+            gbc.weightx = 1.0
+            add(JBScrollPane(privateKeyArea).apply { preferredSize = Dimension(280, 100) }, gbc)
+
+            gbc.gridx = 0
+            gbc.gridy = 2
+            gbc.weightx = 0.0
+            add(JBLabel("私钥密码:"), gbc)
+            gbc.gridx = 1
+            gbc.weightx = 1.0
+            add(passphraseField, gbc)
+        }
+    }
+
+    fun getJumpHost(): JumpHostConfig? {
+        val host = hostField.text.trim()
+        val username = usernameField.text.trim()
+        if (host.isEmpty() || username.isEmpty()) {
+            return null
+        }
+
+        return JumpHostConfig(
+            host = host,
+            port = portField.value as Int,
+            username = username,
+            authType = currentAuthType,
+            password = String(passwordField.password),
+            privateKey = if (useLocalKeyCheckbox.isSelected) "" else privateKeyArea.text.trim(),
+            passphrase = String(passphraseField.password),
+            useLocalKey = useLocalKeyCheckbox.isSelected
+        )
+    }
+
+    override fun doOKAction() {
+        if (hostField.text.trim().isEmpty()) {
+            Messages.showErrorDialog(project, "请输入跳板机主机地址", "错误")
+            return
+        }
+        if (usernameField.text.trim().isEmpty()) {
+            Messages.showErrorDialog(project, "请输入跳板机用户名", "错误")
+            return
+        }
+        if (currentAuthType == SshConfig.AuthType.PASSWORD && passwordField.password.isEmpty()) {
+            Messages.showErrorDialog(project, "请输入跳板机密码", "错误")
+            return
+        }
+        if (currentAuthType == SshConfig.AuthType.KEY && !useLocalKeyCheckbox.isSelected && privateKeyArea.text.trim().isEmpty()) {
+            Messages.showErrorDialog(project, "请输入跳板机私钥内容", "错误")
+            return
+        }
+        super.doOKAction()
+    }
+}
 
 class ScriptEditDialog(
     private val project: Project,

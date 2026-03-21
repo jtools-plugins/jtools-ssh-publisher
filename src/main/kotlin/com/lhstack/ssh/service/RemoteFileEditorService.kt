@@ -170,7 +170,7 @@ class RemoteFileEditorService(
                 if (!connectionManager.isConnected()) {
                     println("[SFTP] 连接已断开，尝试重连...")
                     if (!connectionManager.connect(config)) {
-                        showSyncError(fileInfo.remotePath, "SSH 连接已断开，重连失败")
+                        showSyncError(fileInfo.remotePath, connectionManager.lastErrorMessage ?: "SSH 连接已断开，重连失败")
                         return@submit
                     }
                     println("[SFTP] 重连成功")
@@ -205,6 +205,8 @@ class RemoteFileEditorService(
                         showSyncError(fileInfo.remotePath, "重连后同步失败: ${retryEx.message}")
                         return@submit
                     }
+                    showSyncError(fileInfo.remotePath, connectionManager.lastErrorMessage ?: "重连后同步失败")
+                    return@submit
                 }
                 showSyncError(fileInfo.remotePath, e.message ?: "未知错误")
             }

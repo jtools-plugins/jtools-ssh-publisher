@@ -1,6 +1,5 @@
 package com.lhstack.ssh.view
 
-import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.fileChooser.FileChooser
@@ -21,6 +20,7 @@ import com.lhstack.ssh.service.ConfigExportImportService
 import com.lhstack.ssh.service.SshConfigService
 import com.lhstack.ssh.service.TransferTaskManager
 import java.awt.BorderLayout
+import java.awt.Dimension
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.io.File
@@ -33,15 +33,46 @@ class MainView(
     val project: Project
 ) : SimpleToolWindowPanel(true), Disposable {
 
+    companion object {
+        private const val DEFAULT_TOP_PANEL_PROPORTION = 0.4f
+        private const val COLLAPSED_TOP_PANEL_PROPORTION = 0.02f
+        private const val DEFAULT_DIVIDER_WIDTH = 7
+    }
+
     private lateinit var tree: Tree
     private lateinit var treeModel: DefaultTreeModel
     private val rootNode = DefaultMutableTreeNode()
 
     private val terminalTabs = DockableTabPanel(parentDisposable)
     private val leftTabs = com.intellij.ui.components.JBTabbedPane(JTabbedPane.TOP)
-    private val splitPane = JBSplitter(true, 0.4f)
+    private val splitPane = JBSplitter(true, DEFAULT_TOP_PANEL_PROPORTION)
+    private val topPanelCollapseState = MainViewCollapseState(
+        defaultExpandedProportion = DEFAULT_TOP_PANEL_PROPORTION,
+        collapsedProportion = COLLAPSED_TOP_PANEL_PROPORTION
+    )
+    private lateinit var topPanelContainer: JPanel
+    private lateinit var mainToolbar: ActionToolbar
+    private lateinit var topPanelToggleToolbar: ActionToolbar
     private lateinit var transferTaskPanel: TransferTaskPanel
     private lateinit var uploadTemplatePanel: UploadTemplatePanel
+    private val toggleTopPanelAction = object : AnAction() {
+        override fun actionPerformed(e: AnActionEvent) {
+            toggleTopPanelCollapsed()
+        }
+
+        override fun update(e: AnActionEvent) {
+            val collapsed = topPanelCollapseState.collapsed
+            e.presentation.icon = if (collapsed) PluginIcons.ExpandAll else PluginIcons.CollapseAll
+            e.presentation.text = if (collapsed) "展开面板" else "收起面板"
+            e.presentation.description = if (collapsed) {
+                "展开 SSH连接 / 上传模板 / 传输管理 面板"
+            } else {
+                "收起 SSH连接 / 上传模板 / 传输管理 面板"
+            }
+        }
+
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+    }
 
     init {
         Disposer.register(parentDisposable, this)
@@ -64,14 +95,54 @@ class MainView(
 
     private fun initSplitPane() {
         // 左侧Tab：SSH连接 + 上传模板 + 传输管理
-        leftTabs.addTab("SSH连接", AllIcons.Nodes.Plugin, JBScrollPane(tree))
-        leftTabs.addTab("上传模板", AllIcons.Actions.Upload, uploadTemplatePanel)
-        leftTabs.addTab("传输管理", AllIcons.Toolwindows.ToolWindowMessages, transferTaskPanel)
-        
-        splitPane.firstComponent = leftTabs
+        leftTabs.addTab("SSH连接", PluginIcons.SshConnection, JBScrollPane(tree))
+        leftTabs.addTab("上传模板", PluginIcons.UploadTemplate, uploadTemplatePanel)
+        leftTabs.addTab("传输管理", PluginIcons.TransferManager, transferTaskPanel)
+
+        initTopPanelContainer()
+
+        splitPane.firstComponent = topPanelContainer
         splitPane.secondComponent = terminalTabs
         setContent(splitPane)
+        applyTopPanelState(DEFAULT_TOP_PANEL_PROPORTION)
     }
+
+    private fun initTopPanelContainer() {
+        topPanelContainer = JPanel(BorderLayout()).apply {
+            add(leftTabs, BorderLayout.CENTER)
+            minimumSize = Dimension(0, 0)
+        }
+    }
+
+    private fun toggleTopPanelCollapsed() {
+        val targetProportion = if (topPanelCollapseState.collapsed) {
+            topPanelCollapseState.expand()
+        } else {
+            topPanelCollapseState.collapse(splitPane.proportion)
+        }
+        applyTopPanelState(targetProportion)
+    }
+
+    private fun applyTopPanelState(targetProportion: Float) {
+        topPanelContainer.isVisible = topPanelCollapseState.topPanelVisible
+        topPanelContainer.minimumSize = Dimension(0, 0)
+        splitPane.dividerWidth = if (topPanelCollapseState.collapsed) 0 else DEFAULT_DIVIDER_WIDTH
+        mainToolbar.updateActionsImmediately()
+        topPanelToggleToolbar.updateActionsImmediately()
+
+        topPanelContainer.revalidate()
+        topPanelContainer.repaint()
+        splitPane.revalidate()
+        splitPane.repaint()
+
+        SwingUtilities.invokeLater {
+            splitPane.proportion = targetProportion
+            splitPane.revalidate()
+            splitPane.repaint()
+        }
+    }
+
+    private fun areTopPanelControlsVisible(): Boolean = topPanelCollapseState.topPanelControlsVisible
 
     private fun initTree() {
         treeModel = DefaultTreeModel(rootNode)
@@ -89,12 +160,12 @@ class MainView(
                 val node = value as? DefaultMutableTreeNode ?: return
                 when (val userObject = node.userObject) {
                     is SshConfig -> {
-                        icon = AllIcons.Nodes.Plugin
+                        icon = PluginIcons.SshConnection
                         append(userObject.name, SimpleTextAttributes.REGULAR_ATTRIBUTES)
                         append("  ${userObject.host}:${userObject.port}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                     }
                     is String -> {
-                        icon = AllIcons.Nodes.Folder
+                        icon = PluginIcons.Folder
                         append(userObject, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
                         append("  (${node.childCount})", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                     }
@@ -134,19 +205,19 @@ class MainView(
 
     private fun showConfigContextMenu(e: MouseEvent, config: SshConfig) {
         JPopupMenu().apply {
-            add(createMenuItem("打开终端", AllIcons.Debugger.Console) { openTerminal(config) })
-            add(createMenuItem("文件系统", AllIcons.Nodes.Folder) { openFileSystem(config) })
-            add(createMenuItem("上传文件", AllIcons.Actions.Upload) { openUploadDialog(config) })
+            add(createMenuItem("打开终端", PluginIcons.Terminal) { openTerminal(config) })
+            add(createMenuItem("文件系统", PluginIcons.Folder) { openFileSystem(config) })
+            add(createMenuItem("上传文件", PluginIcons.Upload) { openUploadDialog(config) })
             addSeparator()
-            add(createMenuItem("编辑", AllIcons.Actions.Edit) { editConfig(config) })
-            add(createMenuItem("复制", AllIcons.Actions.Copy) { copyConfig(config) })
-            add(createMenuItem("删除", AllIcons.Actions.GC) { deleteConfig(config) })
+            add(createMenuItem("编辑", PluginIcons.Edit) { editConfig(config) })
+            add(createMenuItem("复制", PluginIcons.Copy) { copyConfig(config) })
+            add(createMenuItem("删除", PluginIcons.Delete) { deleteConfig(config) })
         }.show(e.component, e.x, e.y)
     }
 
     private fun showGroupContextMenu(e: MouseEvent, group: String) {
         JPopupMenu().apply {
-            add(createMenuItem("新建配置到此分组", AllIcons.Actions.AddFile) {
+            add(createMenuItem("新建配置到此分组", PluginIcons.Add) {
                 AddItemDialog(project, null, group) { refreshTree() }.show()
             })
         }.show(e.component, e.x, e.y)
@@ -158,13 +229,13 @@ class MainView(
 
     private fun openTerminal(config: SshConfig) {
         val terminalPanel = SshTerminalPanel(parentDisposable, config, project)
-        addTab(config.name, AllIcons.Debugger.Console, terminalPanel, config.host)
+        addTab(config.name, PluginIcons.Terminal, terminalPanel, config.host)
     }
 
     private fun openFileSystem(config: SshConfig) {
         val fileSystemPanel = SftpFileSystemPanel(config, project)
         Disposer.register(parentDisposable, fileSystemPanel)
-        addTab("${config.name} [文件]", AllIcons.Nodes.Folder, fileSystemPanel, config.host)
+        addTab("${config.name} [文件]", PluginIcons.Folder, fileSystemPanel, config.host)
     }
 
     private fun addTab(title: String, icon: Icon, component: JComponent, tooltip: String) {
@@ -265,7 +336,7 @@ class MainView(
 
     private fun initActionToolbar() {
         val actionGroup = DefaultActionGroup().apply {
-            add(object : AnAction({ "新建配置" }, AllIcons.Actions.AddFile) {
+            add(object : AnAction({ "新建配置" }, PluginIcons.Add) {
                 override fun actionPerformed(e: AnActionEvent) {
                     when (leftTabs.selectedIndex) {
                         0 -> AddItemDialog(project, null, null) { refreshTree() }.show()
@@ -273,6 +344,10 @@ class MainView(
                     }
                 }
                 override fun update(e: AnActionEvent) {
+                    if (!areTopPanelControlsVisible()) {
+                        e.presentation.isVisible = false
+                        return
+                    }
                     when (leftTabs.selectedIndex) {
                         0 -> e.presentation.text = "新建配置"
                         1 -> e.presentation.text = "新建模板"
@@ -288,12 +363,12 @@ class MainView(
                     MultiFileUploadDialog(project).show()
                 }
                 override fun update(e: AnActionEvent) {
-                    e.presentation.isVisible = leftTabs.selectedIndex == 0
+                    e.presentation.isVisible = areTopPanelControlsVisible() && leftTabs.selectedIndex == 0
                 }
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
 
-            add(object : AnAction({ "刷新" }, AllIcons.Actions.Refresh) {
+            add(object : AnAction({ "刷新" }, PluginIcons.Refresh) {
                 override fun actionPerformed(e: AnActionEvent) {
                     when (leftTabs.selectedIndex) {
                         0 -> refreshTree()
@@ -301,12 +376,15 @@ class MainView(
                         2 -> transferTaskPanel.refreshList()
                     }
                 }
+                override fun update(e: AnActionEvent) {
+                    e.presentation.isVisible = areTopPanelControlsVisible()
+                }
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
 
             addSeparator()
 
-            add(object : AnAction({ "全部展开" }, AllIcons.Actions.Expandall) {
+            add(object : AnAction({ "全部展开" }, PluginIcons.ExpandAll) {
                 override fun actionPerformed(e: AnActionEvent) {
                     when (leftTabs.selectedIndex) {
                         0 -> expandAllNodes()
@@ -314,12 +392,12 @@ class MainView(
                     }
                 }
                 override fun update(e: AnActionEvent) {
-                    e.presentation.isVisible = leftTabs.selectedIndex in 0..1
+                    e.presentation.isVisible = areTopPanelControlsVisible() && leftTabs.selectedIndex in 0..1
                 }
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
 
-            add(object : AnAction({ "全部折叠" }, AllIcons.Actions.Collapseall) {
+            add(object : AnAction({ "全部折叠" }, PluginIcons.CollapseAll) {
                 override fun actionPerformed(e: AnActionEvent) {
                     when (leftTabs.selectedIndex) {
                         0 -> collapseAllNodes()
@@ -327,34 +405,50 @@ class MainView(
                     }
                 }
                 override fun update(e: AnActionEvent) {
-                    e.presentation.isVisible = leftTabs.selectedIndex in 0..1
+                    e.presentation.isVisible = areTopPanelControlsVisible() && leftTabs.selectedIndex in 0..1
                 }
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
             
             addSeparator()
             
-            add(object : AnAction({ "导出配置" }, AllIcons.ToolbarDecorator.Export) {
+            add(object : AnAction({ "导出配置" }, PluginIcons.Export) {
                 override fun actionPerformed(e: AnActionEvent) {
                     exportConfigs()
+                }
+                override fun update(e: AnActionEvent) {
+                    e.presentation.isVisible = areTopPanelControlsVisible()
                 }
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
             
-            add(object : AnAction({ "导入配置" }, AllIcons.ToolbarDecorator.Import) {
+            add(object : AnAction({ "导入配置" }, PluginIcons.Import) {
                 override fun actionPerformed(e: AnActionEvent) {
                     importConfigs()
+                }
+                override fun update(e: AnActionEvent) {
+                    e.presentation.isVisible = areTopPanelControlsVisible()
                 }
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
         }
 
-        val toolbar = ActionManager.getInstance()
+        mainToolbar = ActionManager.getInstance()
             .createActionToolbar("ssh-publisher-toolbar", actionGroup, true)
-        toolbar.targetComponent = this
+        mainToolbar.targetComponent = this
+
+        topPanelToggleToolbar = ActionManager.getInstance()
+            .createActionToolbar(
+                "ssh-publisher-top-panel-toggle",
+                DefaultActionGroup(toggleTopPanelAction),
+                true
+            ).apply {
+                targetComponent = this@MainView
+            }
 
         this.toolbar = JPanel(BorderLayout()).apply {
-            add(toolbar.component, BorderLayout.WEST)
+            add(mainToolbar.component, BorderLayout.WEST)
+            add(topPanelToggleToolbar.component, BorderLayout.EAST)
         }
     }
 

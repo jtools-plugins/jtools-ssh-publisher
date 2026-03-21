@@ -1,6 +1,5 @@
 package com.lhstack.ssh.view
 
-import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.fileChooser.FileChooser
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
@@ -21,6 +20,7 @@ import com.intellij.ui.components.JBTabbedPane
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.table.JBTable
 import com.intellij.util.ui.JBUI
+import com.lhstack.ssh.PluginIcons
 import com.lhstack.ssh.component.MultiLanguageTextField
 import com.lhstack.ssh.model.ScriptConfig
 import com.lhstack.ssh.model.SshConfig
@@ -524,7 +524,7 @@ class MultiFileUploadDialog(
             super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
             if (value is FileUploadConfig) {
                 text = value.remoteFileName
-                icon = AllIcons.FileTypes.Any_type
+                icon = PluginIcons.FileGeneric
                 toolTipText = "${value.localFile.absolutePath} -> ${value.selectedServerIds.size} 台服务器"
             }
             return this

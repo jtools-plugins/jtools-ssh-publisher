@@ -4,8 +4,10 @@ import com.lhstack.ssh.model.SshConfig
 import org.apache.sshd.client.SshClient
 import org.apache.sshd.client.channel.ChannelShell
 import org.apache.sshd.client.session.ClientSession
+import org.apache.sshd.client.session.forward.ExplicitPortForwardingTracker
 import org.apache.sshd.sftp.client.SftpClient
 import org.apache.sshd.sftp.client.SftpClientFactory
+import org.apache.sshd.common.util.net.SshdSocketAddress
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -22,9 +24,15 @@ class SshConnectionManager {
     }
     private var session: ClientSession? = null
     private var sftpClient: SftpClient? = null
+    private val sessionChain = mutableListOf<ClientSession>()
+    private val forwardingTrackers = mutableListOf<ExplicitPortForwardingTracker>()
 
     @Volatile
     private var cancelled = false
+
+    @Volatile
+    var lastErrorMessage: String? = null
+        private set
 
     /**
      * 取消当前操作
@@ -38,79 +46,173 @@ class SshConnectionManager {
      * 连接SSH服务器
      */
     fun connect(config: SshConfig): Boolean {
-        if (cancelled) return false
+        if (cancelled) {
+            lastErrorMessage = "连接已取消"
+            return false
+        }
 
         return try {
             disconnect()
+            lastErrorMessage = null
 
-            println("[SSH] 正在连接 ${config.username}@${config.host}:${config.port}")
+            val chain = SshConnectionChainPlanner.buildChain(config)
+            var connectHost = chain.first().host
+            var connectPort = chain.first().port
 
-            val connectFuture = client.connect(config.username, config.host, config.port)
-            if (!connectFuture.await(15, TimeUnit.SECONDS)) {
-                println("[SSH] 连接超时")
-                return false
-            }
-            if (cancelled) return false
+            chain.forEachIndexed { index, endpoint ->
+                val hopLabel = "第 ${index + 1}/${chain.size} 跳"
+                validateEndpoint(endpoint, hopLabel)
+                println("[SSH] $hopLabel 正在连接 ${endpoint.username}@${endpoint.host}:${endpoint.port}")
 
-            session = connectFuture.session
-
-            println("[SSH] 连接建立，正在认证...")
-
-            when (config.authType) {
-                SshConfig.AuthType.PASSWORD -> {
-                    println("[SSH] 使用密码认证")
-                    session?.addPasswordIdentity(config.password)
-                }
-
-                SshConfig.AuthType.KEY -> {
-                    // 如果启用了使用本地密钥，优先使用本地密钥
-                    val privateKeyContent = if (config.useLocalKey && SshConfig.hasLocalKey()) {
-                        println("[SSH] 使用本地密钥认证 (~/.ssh/id_rsa)")
-                        SshConfig.readLocalKey() ?: config.privateKey
-                    } else {
-                        println("[SSH] 使用配置的密钥认证")
-                        config.privateKey
-                    }
-                    
-                    if (privateKeyContent.isBlank()) {
-                        println("[SSH] 密钥内容为空")
+                val currentSession = connectSession(endpoint, connectHost, connectPort, hopLabel)
+                    ?: run {
+                        disconnect()
                         return false
                     }
-                    
-                    val keyPair = loadKeyPair(privateKeyContent, config.passphrase)
-                    session?.addPublicKeyIdentity(keyPair)
-                }
-            }
 
-            if (cancelled) return false
+                sessionChain.add(currentSession)
+                session = currentSession
 
-            val authFuture = session?.auth()
-            if (authFuture?.await(15, TimeUnit.SECONDS) != true) {
-                println("[SSH] 认证超时")
-                return false
-            }
+                if (index < chain.lastIndex) {
+                    val next = chain[index + 1]
+                    val tracker = try {
+                        currentSession.createLocalPortForwardingTracker(
+                            SshdSocketAddress(SshdSocketAddress.LOCALHOST_NAME, 0),
+                            SshdSocketAddress(next.host, next.port)
+                        )
+                    } catch (e: Exception) {
+                        disconnect()
+                        return fail("第 ${index + 1}/${chain.size} 跳建立到 ${next.host}:${next.port} 转发", e)
+                    }
+                    forwardingTrackers.add(tracker)
 
-            val authenticated = session?.isAuthenticated == true
-            println("[SSH] 认证结果: $authenticated")
-
-            if (authenticated) {
-                try {
-                    org.apache.sshd.core.CoreModuleProperties.HEARTBEAT_INTERVAL.set(
-                        session,
-                        java.time.Duration.ofSeconds(30)
+                    val boundAddress = ForwardAddressResolver.resolveForward(
+                        requested = tracker.localAddress,
+                        bound = tracker.boundAddress
                     )
-                    org.apache.sshd.core.CoreModuleProperties.HEARTBEAT_NO_REPLY_MAX.set(session, 3)
-                    println("[SSH] 心跳保活已配置")
-                } catch (e: Exception) {
-                    println("[SSH] 心跳配置失败（不影响连接）: ${e.message}")
+                    connectHost = boundAddress.host
+                    connectPort = boundAddress.port
+                    println("[SSH] $hopLabel 已建立到下一跳 ${next.host}:${next.port} 的转发，本地端口: $connectPort")
                 }
             }
 
-            authenticated
+            if (session?.isAuthenticated == true) {
+                true
+            } else {
+                fail("最终目标认证", IllegalStateException("会话未认证"))
+            }
         } catch (e: Exception) {
-            println("[SSH] 连接错误: ${e.message}")
-            e.printStackTrace()
-            false
+            disconnect()
+            fail("连接", e)
+        }
+    }
+
+    private fun connectSession(
+        endpoint: SshConnectionEndpoint,
+        connectHost: String,
+        connectPort: Int,
+        hopLabel: String
+    ): ClientSession? {
+        val connectFuture = try {
+            client.connect(endpoint.username, connectHost, connectPort).verify(15, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            return failSession("$hopLabel 连接", e)
+        }
+        if (cancelled) return null
+
+        val currentSession = connectFuture.session
+        if (!connectFuture.isConnected || currentSession == null) {
+            return failSession("$hopLabel 连接", IllegalStateException("连接未建立"))
+        }
+        println("[SSH] $hopLabel 连接建立，正在认证...")
+
+        try {
+            applyAuthentication(currentSession, endpoint, hopLabel)
+        } catch (e: Exception) {
+            currentSession.close()
+            return failSession("$hopLabel 准备认证", e)
+        }
+
+        if (cancelled) return null
+
+        val authFuture = try {
+            currentSession.auth().verify(15, TimeUnit.SECONDS)
+        } catch (e: Exception) {
+            currentSession.close()
+            return failSession("$hopLabel 认证", e)
+        }
+
+        val authenticated = authFuture.isSuccess && currentSession.isAuthenticated
+        println("[SSH] $hopLabel 认证结果: $authenticated")
+        if (!authenticated) {
+            currentSession.close()
+            return failSession("$hopLabel 认证", IllegalStateException("认证失败"))
+        }
+
+        try {
+            org.apache.sshd.core.CoreModuleProperties.HEARTBEAT_INTERVAL.set(
+                currentSession,
+                java.time.Duration.ofSeconds(30)
+            )
+            org.apache.sshd.core.CoreModuleProperties.HEARTBEAT_NO_REPLY_MAX.set(currentSession, 3)
+        } catch (e: Exception) {
+            println("[SSH] $hopLabel 心跳配置失败（不影响连接）: ${e.message}")
+        }
+        return currentSession
+    }
+
+    private fun fail(stage: String, error: Throwable): Boolean {
+        lastErrorMessage = SshConnectionErrorFormatter.format(stage, error)
+        println("[SSH] $lastErrorMessage")
+        error.printStackTrace()
+        return false
+    }
+
+    private fun failSession(stage: String, error: Throwable): ClientSession? {
+        lastErrorMessage = SshConnectionErrorFormatter.format(stage, error)
+        println("[SSH] $lastErrorMessage")
+        error.printStackTrace()
+        return null
+    }
+
+    private fun applyAuthentication(currentSession: ClientSession, endpoint: SshConnectionEndpoint, hopLabel: String) {
+        when (endpoint.authType) {
+            SshConfig.AuthType.PASSWORD -> {
+                println("[SSH] $hopLabel 使用密码认证")
+                currentSession.addPasswordIdentity(endpoint.password)
+            }
+
+            SshConfig.AuthType.KEY -> {
+                val privateKeyContent = if (endpoint.useLocalKey && SshConfig.hasLocalKey()) {
+                    println("[SSH] $hopLabel 使用本地密钥认证 (~/.ssh/id_rsa)")
+                    SshConfig.readLocalKey() ?: endpoint.privateKey
+                } else {
+                    println("[SSH] $hopLabel 使用配置的密钥认证")
+                    endpoint.privateKey
+                }
+
+                if (privateKeyContent.isBlank()) {
+                    throw IllegalArgumentException("$hopLabel 密钥内容为空")
+                }
+
+                val keyPair = loadKeyPair(privateKeyContent, endpoint.passphrase)
+                currentSession.addPublicKeyIdentity(keyPair)
+            }
+        }
+    }
+
+    private fun validateEndpoint(endpoint: SshConnectionEndpoint, hopLabel: String) {
+        require(endpoint.host.isNotBlank()) { "$hopLabel 主机不能为空" }
+        require(endpoint.username.isNotBlank()) { "$hopLabel 用户名不能为空" }
+        when (endpoint.authType) {
+            SshConfig.AuthType.PASSWORD -> require(endpoint.password.isNotBlank()) { "$hopLabel 密码不能为空" }
+            SshConfig.AuthType.KEY -> {
+                if (endpoint.useLocalKey) {
+                    require(SshConfig.hasLocalKey()) { "$hopLabel 本地密钥不存在" }
+                } else {
+                    require(endpoint.privateKey.isNotBlank()) { "$hopLabel 私钥不能为空" }
+                }
+            }
         }
     }
     
@@ -213,7 +315,22 @@ class SshConnectionManager {
         try {
             sftpClient?.close()
             sftpClient = null
-            session?.close()
+            forwardingTrackers.asReversed().forEach {
+                try {
+                    it.close()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            forwardingTrackers.clear()
+            sessionChain.asReversed().forEach {
+                try {
+                    it.close()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            sessionChain.clear()
             session = null
         } catch (e: Exception) {
             e.printStackTrace()
