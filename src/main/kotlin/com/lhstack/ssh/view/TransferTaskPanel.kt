@@ -1,12 +1,12 @@
 package com.lhstack.ssh.view
 
-import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
+import com.lhstack.ssh.PluginIcons
 import com.lhstack.ssh.model.TransferTask
 import com.lhstack.ssh.service.TransferTaskManager
 import java.awt.BorderLayout
@@ -31,10 +31,10 @@ class TransferTaskPanel : JPanel(BorderLayout()), Disposable, TransferTaskManage
 
         // 工具栏
         val toolbar = JPanel(FlowLayout(FlowLayout.LEFT, 5, 5)).apply {
-            add(JButton("清除已完成", AllIcons.Actions.GC).apply {
+            add(JButton("清除已完成", PluginIcons.Delete).apply {
                 addActionListener { TransferTaskManager.clearCompletedTasks() }
             })
-            add(JButton("全部停止", AllIcons.Actions.Suspend).apply {
+            add(JButton("全部停止", PluginIcons.Stop).apply {
                 addActionListener { TransferTaskManager.stopAllTasks() }
             })
         }
@@ -103,19 +103,19 @@ class TransferTaskPanel : JPanel(BorderLayout()), Disposable, TransferTaskManage
         private val messageLabel = JBLabel()
         private val timeLabel = JBLabel()
         
-        private val retryBtn = JLabel(AllIcons.Actions.Refresh).apply {
+        private val retryBtn = JLabel(PluginIcons.Refresh).apply {
             toolTipText = "重试"
             cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
         }
-        private val stopBtn = JLabel(AllIcons.Actions.Suspend).apply {
+        private val stopBtn = JLabel(PluginIcons.Stop).apply {
             toolTipText = "停止"
             cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
         }
-        private val detailBtn = JLabel(AllIcons.Actions.Preview).apply {
+        private val detailBtn = JLabel(PluginIcons.Detail).apply {
             toolTipText = "查看详情"
             cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
         }
-        private val deleteBtn = JLabel(AllIcons.Actions.GC).apply {
+        private val deleteBtn = JLabel(PluginIcons.Delete).apply {
             toolTipText = "删除"
             cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
         }
@@ -201,8 +201,8 @@ class TransferTaskPanel : JPanel(BorderLayout()), Disposable, TransferTaskManage
 
             // 类型图标
             typeIcon.icon = when (task.type) {
-                TransferTask.TransferType.UPLOAD -> AllIcons.Actions.Upload
-                TransferTask.TransferType.DOWNLOAD -> AllIcons.Actions.Download
+                TransferTask.TransferType.UPLOAD -> PluginIcons.Upload
+                TransferTask.TransferType.DOWNLOAD -> PluginIcons.Download
             }
             typeIcon.toolTipText = when (task.type) {
                 TransferTask.TransferType.UPLOAD -> "上传"
@@ -216,11 +216,11 @@ class TransferTaskPanel : JPanel(BorderLayout()), Disposable, TransferTaskManage
             timeLabel.text = dateFormat.format(task.createTime)
 
             statusIcon.icon = when (task.status) {
-                TransferTask.TaskStatus.PENDING -> AllIcons.Process.Step_1
-                TransferTask.TaskStatus.RUNNING -> AllIcons.Process.Step_4
-                TransferTask.TaskStatus.SUCCESS -> AllIcons.General.InspectionsOK
-                TransferTask.TaskStatus.FAILED -> AllIcons.General.Error
-                TransferTask.TaskStatus.STOPPED -> AllIcons.Actions.Suspend
+                TransferTask.TaskStatus.PENDING -> PluginIcons.Pending
+                TransferTask.TaskStatus.RUNNING -> PluginIcons.Running
+                TransferTask.TaskStatus.SUCCESS -> PluginIcons.Success
+                TransferTask.TaskStatus.FAILED -> PluginIcons.Error
+                TransferTask.TaskStatus.STOPPED -> PluginIcons.Stop
             }
 
             // 根据状态控制按钮可用性

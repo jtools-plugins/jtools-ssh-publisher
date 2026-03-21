@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.lhstack.ssh-publisher</id>
     <name>JTools SSH Publisher</name>
-    <version>1.2.0</version>
+    <version>1.2.1</version>
     <vendor email="lhstack@foxmail.com" url="https://github.com/lhstack">lhstack</vendor>
 
     <description><![CDATA[
@@ -19,6 +19,7 @@
         <li>Password & private key authentication / 密码和密钥认证</li>
         <li>Use local key (~/.ssh/id_rsa) / 使用本地默认密钥</li>
         <li>Load key from file picker / 从文件选择器加载密钥</li>
+        <li><b>Jump host chain support / 支持跳板链连接</b></li>
         <li>Connection testing / 连接测试</li>
         <li>Heartbeat keep-alive / 心跳保活</li>
         <li><b>Pre/Post scripts with list+editor UI / 前置/后置脚本（列表+编辑器方式）</b></li>
@@ -98,6 +99,7 @@
         <li><b>Export all or selected configs / 导出全部或选择性导出</b></li>
         <li><b>Import with overwrite/skip option / 导入支持覆盖或跳过</b></li>
         <li><b>Preserve expand state on refresh / 刷新时保持展开状态</b></li>
+        <li><b>Collapsible top panel with layout restore / 上方面板支持收起展开并恢复分栏比例</b></li>
     </ul>
 
     <h4>Data Storage / 数据存储</h4>
@@ -105,6 +107,18 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>1.2.1</b>
+    <ul>
+        <li>新增：SSH 配置支持跳板链（Jump Host），可通过一台或多台跳板机连接目标服务器</li>
+        <li>新增：跳板链支持密码认证、私钥认证和本地默认密钥认证</li>
+        <li>新增：SSH 配置编辑对话框支持新增、编辑、删除、上下调整跳板机顺序</li>
+        <li>新增：上方面板支持收起/展开，展开时恢复上次分栏比例</li>
+        <li>优化：收起上方面板时自动隐藏无效工具栏按钮，仅保留右上角展开入口</li>
+        <li>优化：统一整理项目内图标资源，提升工具栏、Tab、文件系统和传输管理的识别度</li>
+        <li>修复：跳板连接时本地端口转发取值错误导致的 Invalid port: 0 问题</li>
+        <li>修复：跳板连接失败时错误信息过于模糊的问题，现可显示具体跳数和失败阶段</li>
+    </ul>
+
     <b>1.2.0</b>
     <ul>
         <li>新增：文件系统支持批量上传到当前目录或所选目录</li>

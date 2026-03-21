@@ -1,6 +1,5 @@
 package com.lhstack.ssh.view
 
-import com.intellij.icons.AllIcons
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.CheckboxTree
@@ -8,6 +7,7 @@ import com.intellij.ui.CheckedTreeNode
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
+import com.lhstack.ssh.PluginIcons
 import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.model.UploadTemplate
 import com.lhstack.ssh.service.SshConfigService
@@ -87,19 +87,19 @@ class ExportSelectDialog(
                 val node = value as? CheckedTreeNode ?: return
                 when (val userObject = node.userObject) {
                     is SshConfig -> {
-                        textRenderer.icon = AllIcons.Nodes.Plugin
+                        textRenderer.icon = PluginIcons.SshConnection
                         textRenderer.append(userObject.name, SimpleTextAttributes.REGULAR_ATTRIBUTES)
                         textRenderer.append("  ${userObject.host}:${userObject.port}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                     }
                     is UploadTemplate -> {
-                        textRenderer.icon = AllIcons.Actions.Upload
+                        textRenderer.icon = PluginIcons.UploadTemplate
                         textRenderer.append(userObject.name, SimpleTextAttributes.REGULAR_ATTRIBUTES)
                         val sshConfig = SshConfigService.getConfigById(userObject.sshConfigId)
                         val serverName = sshConfig?.name ?: "未知服务器"
                         textRenderer.append("  → $serverName", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                     }
                     is String -> {
-                        textRenderer.icon = AllIcons.Nodes.Folder
+                        textRenderer.icon = PluginIcons.Folder
                         textRenderer.append(userObject, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
                         textRenderer.append("  (${node.childCount})", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                     }

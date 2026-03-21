@@ -1,9 +1,9 @@
 package com.lhstack.ssh.view
 
-import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.JBSplitter
+import com.lhstack.ssh.PluginIcons
 import java.awt.*
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
@@ -291,7 +291,7 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
 
         private fun showTabContextMenu(e: MouseEvent, tabIndex: Int) {
             JPopupMenu().apply {
-                add(JMenuItem("关闭", AllIcons.Actions.Close).apply {
+                add(JMenuItem("关闭", PluginIcons.Close).apply {
                     addActionListener { closeTab(tabIndex) }
                 })
                 add(JMenuItem("关闭其他").apply {
@@ -302,11 +302,11 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
                     addActionListener { closeAllTabs() }
                 })
                 addSeparator()
-                add(JMenuItem("向右拆分", AllIcons.Actions.SplitVertically).apply {
+                add(JMenuItem("向右拆分", PluginIcons.SplitVertical).apply {
                     addActionListener { splitRight(tabIndex) }
                     isEnabled = tabs.size > 1
                 })
-                add(JMenuItem("向下拆分", AllIcons.Actions.SplitHorizontally).apply {
+                add(JMenuItem("向下拆分", PluginIcons.SplitHorizontal).apply {
                     addActionListener { splitDown(tabIndex) }
                     isEnabled = tabs.size > 1
                 })
@@ -314,7 +314,7 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
                 // 如果有父容器（说明已经分屏），显示取消分屏选项
                 if (parentContainer != null) {
                     addSeparator()
-                    add(JMenuItem("取消分屏", AllIcons.Actions.Cancel).apply {
+                    add(JMenuItem("取消分屏", PluginIcons.Unsplit).apply {
                         addActionListener { unsplit() }
                     })
                 }
@@ -376,7 +376,7 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
                     add(JLabel(tab.title), BorderLayout.CENTER)
                 }, BorderLayout.CENTER)
 
-                add(JLabel(AllIcons.Actions.Close).apply {
+                add(JLabel(PluginIcons.Close).apply {
                     toolTipText = "关闭"
                     cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
                     addMouseListener(object : MouseAdapter() {
@@ -384,8 +384,8 @@ class DockableTabPanel(private val parentDisposable: Disposable) : JPanel(Border
                             val idx = tabs.indexOfFirst { it.component == tab.component }
                             if (idx >= 0) closeTab(idx)
                         }
-                        override fun mouseEntered(e: MouseEvent) { icon = AllIcons.Actions.CloseHovered }
-                        override fun mouseExited(e: MouseEvent) { icon = AllIcons.Actions.Close }
+                        override fun mouseEntered(e: MouseEvent) { icon = PluginIcons.Close }
+                        override fun mouseExited(e: MouseEvent) { icon = PluginIcons.Close }
                     })
                 }, BorderLayout.EAST)
             }
