@@ -19,7 +19,8 @@ data class SshConfig(
     var privateKey: String = "",
     var passphrase: String = "",
     var remoteDir: String = "/tmp",
-    var useLocalKey: Boolean = false  // 是否使用本地密钥（~/.ssh/id_rsa）
+    var useLocalKey: Boolean = false,  // 是否使用本地密钥（~/.ssh/id_rsa）
+    var jumpHosts: List<JumpHostConfig> = emptyList()
 ) : Serializable {
     enum class AuthType {
         PASSWORD, KEY
@@ -53,6 +54,17 @@ data class SshConfig(
         }
     }
 }
+
+data class JumpHostConfig(
+    var host: String = "",
+    var port: Int = 22,
+    var username: String = "root",
+    var authType: SshConfig.AuthType = SshConfig.AuthType.PASSWORD,
+    var password: String = "",
+    var privateKey: String = "",
+    var passphrase: String = "",
+    var useLocalKey: Boolean = false
+) : Serializable
 
 /**
  * 脚本配置

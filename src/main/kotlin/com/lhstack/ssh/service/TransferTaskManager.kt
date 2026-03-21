@@ -107,7 +107,7 @@ object TransferTaskManager {
                     manager.close()
                 }
             } else {
-                task.addLog("无法连接服务器删除远程文件")
+                task.addLog(manager.lastErrorMessage ?: "无法连接服务器删除远程文件")
             }
         } catch (e: Exception) {
             task.addLog("删除远程文件时出错: ${e.message}")
@@ -208,8 +208,8 @@ object TransferTaskManager {
                     if (task.status != TransferTask.TaskStatus.STOPPED) {
                         updateTask(task) {
                             status = TransferTask.TaskStatus.FAILED
-                            message = "连接失败"
-                            addLog("✗ 连接失败")
+                            message = manager.lastErrorMessage ?: "连接失败"
+                            addLog("✗ ${manager.lastErrorMessage ?: "连接失败"}")
                         }
                     }
                     return@submit

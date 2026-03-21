@@ -1,6 +1,5 @@
 package com.lhstack.ssh.view
 
-import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.fileChooser.FileChooser
@@ -118,7 +117,7 @@ class SftpFileSystemPanel(
             override fun getActionUpdateThread() = ActionUpdateThread.BGT
         }
 
-        val deleteAction = object : AnAction("删除", "删除选中的文件或文件夹", AllIcons.Actions.GC) {
+        val deleteAction = object : AnAction("删除", "删除选中的文件或文件夹", PluginIcons.Delete) {
             override fun actionPerformed(e: AnActionEvent) = deleteSelected()
 
             override fun update(e: AnActionEvent) {
@@ -128,32 +127,32 @@ class SftpFileSystemPanel(
                 e.presentation.isEnabled = visibleNodes.isNotEmpty()
                 e.presentation.text = if (isBatch) "批量删除" else "删除"
                 e.presentation.description = if (isBatch) "递归删除选中的多个文件或文件夹" else "删除选中的文件或文件夹"
-                e.presentation.icon = if (isBatch) PluginIcons.BatchDelete else AllIcons.Actions.GC
+                e.presentation.icon = if (isBatch) PluginIcons.BatchDelete else PluginIcons.Delete
             }
 
             override fun getActionUpdateThread() = ActionUpdateThread.BGT
         }
 
         val actionGroup = DefaultActionGroup().apply {
-            add(object : AnAction("上级目录", "返回上级目录", AllIcons.Actions.MoveUp) {
+            add(object : AnAction("上级目录", "返回上级目录", PluginIcons.ParentDirectory) {
                 override fun actionPerformed(e: AnActionEvent) = goUp()
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
-            add(object : AnAction("刷新", "刷新当前目录", AllIcons.Actions.Refresh) {
+            add(object : AnAction("刷新", "刷新当前目录", PluginIcons.Refresh) {
                 override fun actionPerformed(e: AnActionEvent) = refresh()
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
-            add(object : AnAction("主目录", "返回主目录", AllIcons.Nodes.HomeFolder) {
+            add(object : AnAction("主目录", "返回主目录", PluginIcons.Home) {
                 override fun actionPerformed(e: AnActionEvent) = navigateTo(config.remoteDir.ifEmpty { "/" })
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
             addSeparator()
-            add(object : AnAction("上传", "上传文件到当前目录", AllIcons.Actions.Upload) {
+            add(object : AnAction("上传", "上传文件到当前目录", PluginIcons.Upload) {
                 override fun actionPerformed(e: AnActionEvent) = uploadFile()
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
             add(batchUploadAction)
-            add(object : AnAction("下载", "下载选中的文件", AllIcons.Actions.Download) {
+            add(object : AnAction("下载", "下载选中的文件", PluginIcons.Download) {
                 override fun actionPerformed(e: AnActionEvent) = downloadSelected()
                 override fun update(e: AnActionEvent) {
                     val selected = getSelectedFileNodes()
@@ -161,11 +160,11 @@ class SftpFileSystemPanel(
                 }
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
-            add(object : AnAction("新建文件夹", "在当前目录创建文件夹", AllIcons.Actions.NewFolder) {
+            add(object : AnAction("新建文件夹", "在当前目录创建文件夹", PluginIcons.NewFolder) {
                 override fun actionPerformed(e: AnActionEvent) = createFolder()
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
-            add(object : AnAction("新建文件", "在当前目录创建文件", AllIcons.FileTypes.Text) {
+            add(object : AnAction("新建文件", "在当前目录创建文件", PluginIcons.NewFile) {
                 override fun actionPerformed(e: AnActionEvent) = createFile()
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
@@ -285,25 +284,25 @@ class SftpFileSystemPanel(
 
     private fun connect() {
         statusLabel.text = "正在连接..."
-        statusLabel.icon = AllIcons.Process.Step_1
+        statusLabel.icon = PluginIcons.Pending
         executor.submit {
             try {
                 if (connectionManager.connect(config)) {
                     SwingUtilities.invokeLater {
                         statusLabel.text = "已连接"
-                        statusLabel.icon = AllIcons.General.InspectionsOK
+                        statusLabel.icon = PluginIcons.Success
                         navigateTo(config.remoteDir.ifEmpty { "/" })
                     }
                 } else {
                     SwingUtilities.invokeLater {
-                        statusLabel.text = "连接失败"
-                        statusLabel.icon = AllIcons.General.Error
+                        statusLabel.text = connectionManager.lastErrorMessage ?: "连接失败"
+                        statusLabel.icon = PluginIcons.Error
                     }
                 }
             } catch (e: Exception) {
                 SwingUtilities.invokeLater {
                     statusLabel.text = "错误: ${e.message}"
-                    statusLabel.icon = AllIcons.General.Error
+                    statusLabel.icon = PluginIcons.Error
                 }
             }
         }
@@ -344,7 +343,7 @@ class SftpFileSystemPanel(
 
     private fun loadRootDirectory(path: String = currentPath, token: Long? = null) {
         statusLabel.text = "加载中..."
-        statusLabel.icon = AllIcons.Process.Step_1
+        statusLabel.icon = PluginIcons.Pending
 
         executor.submit {
             try {
@@ -372,7 +371,7 @@ class SftpFileSystemPanel(
                     }
                     treeModel.reload()
                     statusLabel.text = "${rootNode.childCount} 项"
-                    statusLabel.icon = AllIcons.General.InspectionsOK
+                    statusLabel.icon = PluginIcons.Success
                 }
             } catch (e: Exception) {
                 SwingUtilities.invokeLater {
@@ -380,7 +379,7 @@ class SftpFileSystemPanel(
                         return@invokeLater
                     }
                     statusLabel.text = "加载失败: ${e.message}"
-                    statusLabel.icon = AllIcons.General.Error
+                    statusLabel.icon = PluginIcons.Error
                 }
             }
         }
@@ -440,26 +439,26 @@ class SftpFileSystemPanel(
         // 检查连接状态，断开则重连
         if (!connectionManager.isConnected()) {
             statusLabel.text = "正在重连..."
-            statusLabel.icon = AllIcons.Process.Step_1
+            statusLabel.icon = PluginIcons.Pending
             executor.submit {
                 try {
                     if (connectionManager.connect(config)) {
                         SwingUtilities.invokeLater {
                             statusLabel.text = "已重连"
-                            statusLabel.icon = AllIcons.General.InspectionsOK
+                            statusLabel.icon = PluginIcons.Success
                             loadRootDirectory()
                         }
                     } else {
                         SwingUtilities.invokeLater {
-                            statusLabel.text = "重连失败"
-                            statusLabel.icon = AllIcons.General.Error
-                            Messages.showErrorDialog(project, "无法重新连接到服务器", "连接失败")
+                            statusLabel.text = connectionManager.lastErrorMessage ?: "重连失败"
+                            statusLabel.icon = PluginIcons.Error
+                            Messages.showErrorDialog(project, connectionManager.lastErrorMessage ?: "无法重新连接到服务器", "连接失败")
                         }
                     }
                 } catch (e: Exception) {
                     SwingUtilities.invokeLater {
                         statusLabel.text = "重连失败: ${e.message}"
-                        statusLabel.icon = AllIcons.General.Error
+                        statusLabel.icon = PluginIcons.Error
                     }
                 }
             }
@@ -518,7 +517,7 @@ class SftpFileSystemPanel(
                     when {
                         tasks.isEmpty() -> {
                             statusLabel.text = "已创建 ${plan.directories.size} 个目录"
-                            statusLabel.icon = AllIcons.General.InspectionsOK
+                            statusLabel.icon = PluginIcons.Success
                             refreshVisibleDirectory(refreshTargetDirectory)
                         }
                         tasks.size == 1 -> {
@@ -751,7 +750,7 @@ class SftpFileSystemPanel(
                 val sftp = connectionManager.getSftpClient()
                 SwingUtilities.invokeLater {
                     statusLabel.text = if (isBatch) "正在批量删除..." else "正在删除..."
-                    statusLabel.icon = AllIcons.Process.Step_1
+                    statusLabel.icon = PluginIcons.Pending
                 }
 
                 selectedNodes.forEach { fileNode ->
@@ -760,7 +759,7 @@ class SftpFileSystemPanel(
 
                 SwingUtilities.invokeLater {
                     statusLabel.text = if (isBatch) "已批量删除 ${selectedNodes.size} 项" else "已删除"
-                    statusLabel.icon = AllIcons.General.InspectionsOK
+                    statusLabel.icon = PluginIcons.Success
                     refresh()
                 }
             } catch (e: Exception) {
@@ -778,10 +777,10 @@ class SftpFileSystemPanel(
 
         JPopupMenu().apply {
             if (!isBatch && primaryNode?.isDirectory == true) {
-                add(JMenuItem("打开", AllIcons.Actions.MenuOpen).apply {
+                add(JMenuItem("打开", PluginIcons.Open).apply {
                     addActionListener { navigateTo(primaryNode.path) }
                 })
-                add(JMenuItem("上传到此目录", AllIcons.Actions.Upload).apply {
+                add(JMenuItem("上传到此目录", PluginIcons.Upload).apply {
                     addActionListener { uploadToDirectory(primaryNode.path) }
                 })
                 add(JMenuItem("批量上传到此目录", PluginIcons.BatchUpload).apply {
@@ -790,26 +789,26 @@ class SftpFileSystemPanel(
                 addSeparator()
             }
             if (!isBatch && primaryNode != null && !primaryNode.isDirectory) {
-                add(JMenuItem("编辑", AllIcons.Actions.Edit).apply {
+                add(JMenuItem("编辑", PluginIcons.Edit).apply {
                     addActionListener { openFileInEditor(primaryNode) }
                 })
-                add(JMenuItem("下载", AllIcons.Actions.Download).apply {
+                add(JMenuItem("下载", PluginIcons.Download).apply {
                     addActionListener { downloadSelected() }
                 })
             }
             if (!isBatch && primaryNode != null) {
-                add(JMenuItem("重命名", AllIcons.Actions.Edit).apply {
+                add(JMenuItem("重命名", PluginIcons.Rename).apply {
                     addActionListener { renameFile(primaryNode) }
                 })
                 addSeparator()
-                add(JMenuItem("复制路径", AllIcons.Actions.Copy).apply {
+                add(JMenuItem("复制路径", PluginIcons.Copy).apply {
                     addActionListener {
                         java.awt.Toolkit.getDefaultToolkit().systemClipboard
                             .setContents(java.awt.datatransfer.StringSelection(primaryNode.path), null)
                         statusLabel.text = "已复制路径"
                     }
                 })
-                add(JMenuItem("属性", AllIcons.Actions.Properties).apply {
+                add(JMenuItem("属性", PluginIcons.Properties).apply {
                     addActionListener { showProperties(primaryNode) }
                 })
             }
@@ -817,7 +816,7 @@ class SftpFileSystemPanel(
                 if (componentCount > 0) {
                     addSeparator()
                 }
-                add(JMenuItem(if (isBatch) "批量删除" else "删除", if (isBatch) PluginIcons.BatchDelete else AllIcons.Actions.GC).apply {
+                add(JMenuItem(if (isBatch) "批量删除" else "删除", if (isBatch) PluginIcons.BatchDelete else PluginIcons.Delete).apply {
                     addActionListener { deleteSelected() }
                 })
             }
@@ -907,7 +906,7 @@ class SftpFileSystemPanel(
 
                 SwingUtilities.invokeLater {
                     statusLabel.text = if (movePairs.size > 1) "已移动 ${movePairs.size} 项" else "移动成功"
-                    statusLabel.icon = AllIcons.General.InspectionsOK
+                    statusLabel.icon = PluginIcons.Success
                     refresh()
                 }
             } catch (e: Exception) {
@@ -1013,11 +1012,11 @@ class SftpFileSystemPanel(
         }
         
         statusLabel.text = "正在打开: ${fileNode.name}"
-        statusLabel.icon = AllIcons.Process.Step_1
+        statusLabel.icon = PluginIcons.Pending
         
         remoteFileEditorService.openRemoteFile(fileNode.path) { error ->
             statusLabel.text = error
-            statusLabel.icon = AllIcons.General.Error
+            statusLabel.icon = PluginIcons.Error
             Messages.showErrorDialog(project, error, "打开文件失败")
         }
         
@@ -1027,7 +1026,7 @@ class SftpFileSystemPanel(
             SwingUtilities.invokeLater {
                 if (statusLabel.text.startsWith("正在打开")) {
                     statusLabel.text = "已连接"
-                    statusLabel.icon = AllIcons.General.InspectionsOK
+                    statusLabel.icon = PluginIcons.Success
                 }
             }
         }
@@ -1139,7 +1138,7 @@ class FileTreeRenderer : ColoredTreeCellRenderer() {
         val node = value as? DefaultMutableTreeNode ?: return
         when (val obj = node.userObject) {
             is FileNode -> {
-                icon = if (obj.isDirectory) AllIcons.Nodes.Folder else getFileIcon(obj.name)
+                icon = if (obj.isDirectory) PluginIcons.Folder else getFileIcon(obj.name)
                 append(obj.name, SimpleTextAttributes.REGULAR_ATTRIBUTES)
                 append("  ${obj.permissions}", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)
                 if (!obj.isDirectory) {
@@ -1150,7 +1149,7 @@ class FileTreeRenderer : ColoredTreeCellRenderer() {
                 }
             }
             is String -> {
-                icon = AllIcons.Process.Step_1
+                icon = PluginIcons.Pending
                 append(obj, SimpleTextAttributes.GRAYED_ATTRIBUTES)
             }
         }
@@ -1159,15 +1158,13 @@ class FileTreeRenderer : ColoredTreeCellRenderer() {
     private fun getFileIcon(name: String): Icon {
         val ext = name.substringAfterLast(".", "").lowercase()
         return when (ext) {
-            "java", "kt", "scala" -> AllIcons.FileTypes.Java
-            "xml", "html", "htm" -> AllIcons.FileTypes.Xml
-            "json" -> AllIcons.FileTypes.Json
-            "yaml", "yml" -> AllIcons.FileTypes.Yaml
-            "sh", "bash" -> AllIcons.FileTypes.Any_type
-            "txt", "md", "log" -> AllIcons.FileTypes.Text
-            "jar", "war", "zip", "tar", "gz" -> AllIcons.FileTypes.Archive
-            "png", "jpg", "jpeg", "gif", "svg" -> AllIcons.FileTypes.Any_type
-            else -> AllIcons.FileTypes.Any_type
+            "java", "kt", "scala", "xml", "html", "htm" -> PluginIcons.FileCode
+            "json", "yaml", "yml" -> PluginIcons.FileData
+            "sh", "bash" -> PluginIcons.FileScript
+            "txt", "md", "log" -> PluginIcons.FileText
+            "jar", "war", "zip", "tar", "gz" -> PluginIcons.FileArchive
+            "png", "jpg", "jpeg", "gif", "svg" -> PluginIcons.FileImage
+            else -> PluginIcons.FileGeneric
         }
     }
 

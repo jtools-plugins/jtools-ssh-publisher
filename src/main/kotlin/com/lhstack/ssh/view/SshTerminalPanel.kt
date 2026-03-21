@@ -1,6 +1,5 @@
 package com.lhstack.ssh.view
 
-import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
@@ -13,6 +12,7 @@ import com.jediterm.terminal.model.StyleState
 import com.jediterm.terminal.model.TerminalTextBuffer
 import com.jediterm.terminal.ui.JediTermWidget
 import com.lhstack.ssh.model.SshConfig
+import com.lhstack.ssh.PluginIcons
 import com.lhstack.ssh.service.SshConnectionManager
 import com.lhstack.ssh.util.SafeInputMethodRequests
 import com.lhstack.ssh.util.TerminalIoUtils
@@ -46,7 +46,7 @@ class SshTerminalPanel(
 
     private var label = JLabel("正在连接 ${config.username}@${config.host}:${config.port}...", SwingConstants.CENTER)
     private var statusLabel = JLabel()
-    private var reconnectBtn = JButton("重新连接", AllIcons.Actions.Refresh)
+    private var reconnectBtn = JButton("重新连接", PluginIcons.Refresh)
     
     // 系统监控状态栏
     private var systemMonitorBar: SystemMonitorBar? = null
@@ -75,7 +75,7 @@ class SshTerminalPanel(
         Thread {
             try {
                 if (!connectionManager.connect(config)) {
-                    showError("连接失败，请检查配置")
+                    showError(connectionManager.lastErrorMessage ?: "连接失败，请检查配置")
                     return@Thread
                 }
 
@@ -151,7 +151,7 @@ class SshTerminalPanel(
             // 在终端上方显示断线提示条
             val disconnectPanel = JPanel(FlowLayout(FlowLayout.CENTER, 10, 5)).apply {
                 background = java.awt.Color(255, 200, 200)
-                add(JLabel("连接已断开").apply { icon = AllIcons.General.Warning })
+                add(JLabel("连接已断开").apply { icon = PluginIcons.Warning })
                 
                 reconnectBtn.addActionListener { reconnect() }
                 add(reconnectBtn)
@@ -194,7 +194,7 @@ class SshTerminalPanel(
                 
                 // 重新连接
                 if (!connectionManager.connect(config)) {
-                    showError("重新连接失败，请检查网络")
+                    showError(connectionManager.lastErrorMessage ?: "重新连接失败，请检查网络")
                     SwingUtilities.invokeLater {
                         reconnectBtn.isEnabled = true
                         reconnectBtn.text = "重新连接"
@@ -372,6 +372,10 @@ class SshTerminalPanel(
         }
 
         override fun isConnected(): Boolean = running && channel.isOpen
+
+        override fun resize(termWinSize: Dimension) {
+            this.resize(termWinSize, Dimension(0,0))
+        }
 
         override fun resize(termSize: Dimension, pixelSize: Dimension) {
             val normalized = TerminalIoUtils.normalizeTerminalSize(

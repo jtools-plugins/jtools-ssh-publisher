@@ -1,6 +1,5 @@
 package com.lhstack.ssh.view
 
-import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.fileChooser.FileChooser
@@ -22,6 +21,7 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.ui.table.JBTable
 import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.ui.JBUI
+import com.lhstack.ssh.PluginIcons
 import com.lhstack.ssh.component.MultiLanguageTextField
 import com.lhstack.ssh.model.ScriptConfig
 import com.lhstack.ssh.model.SshConfig
@@ -66,18 +66,18 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
 
     private fun initToolbar() {
         val actionGroup = DefaultActionGroup().apply {
-            add(object : AnAction({ "新建模板" }, AllIcons.Actions.AddFile) {
+            add(object : AnAction({ "新建模板" }, PluginIcons.Add) {
                 override fun actionPerformed(e: AnActionEvent) {
                     UploadTemplateDialog(project, null) { refreshTree() }.show()
                 }
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
-            add(object : AnAction({ "刷新" }, AllIcons.Actions.Refresh) {
+            add(object : AnAction({ "刷新" }, PluginIcons.Refresh) {
                 override fun actionPerformed(e: AnActionEvent) = refreshTree()
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
             addSeparator()
-            add(object : AnAction({ "执行选中" }, AllIcons.Actions.Execute) {
+            add(object : AnAction({ "执行选中" }, PluginIcons.Execute) {
                 override fun actionPerformed(e: AnActionEvent) {
                     executeSelectedTemplates()
                 }
@@ -113,14 +113,14 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
                 val node = value as? DefaultMutableTreeNode ?: return
                 when (val userObject = node.userObject) {
                     is UploadTemplate -> {
-                        icon = AllIcons.Actions.Upload
+                        icon = PluginIcons.UploadTemplate
                         append(userObject.name, SimpleTextAttributes.REGULAR_ATTRIBUTES)
                         val sshConfig = SshConfigService.getConfigById(userObject.sshConfigId)
                         val serverName = sshConfig?.name ?: "未知服务器"
                         append("  → $serverName", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                     }
                     is String -> {
-                        icon = AllIcons.Nodes.Folder
+                        icon = PluginIcons.Folder
                         append(userObject, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
                         append("  (${node.childCount})", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                     }
@@ -248,23 +248,23 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
         val selectedTemplates = getSelectedTemplates()
         JPopupMenu().apply {
             if (selectedTemplates.size > 1) {
-                add(createMenuItem("批量执行 (${selectedTemplates.size})", AllIcons.Actions.Execute) { 
+                add(createMenuItem("批量执行 (${selectedTemplates.size})", PluginIcons.Execute) {
                     executeSelectedTemplates() 
                 })
                 addSeparator()
             } else {
-                add(createMenuItem("执行", AllIcons.Actions.Execute) { executeTemplate(template) })
+                add(createMenuItem("执行", PluginIcons.Execute) { executeTemplate(template) })
                 addSeparator()
             }
-            add(createMenuItem("编辑", AllIcons.Actions.Edit) { editTemplate(template) })
-            add(createMenuItem("复制", AllIcons.Actions.Copy) { copyTemplate(template) })
-            add(createMenuItem("删除", AllIcons.Actions.GC) { deleteTemplate(template) })
+            add(createMenuItem("编辑", PluginIcons.Edit) { editTemplate(template) })
+            add(createMenuItem("复制", PluginIcons.Copy) { copyTemplate(template) })
+            add(createMenuItem("删除", PluginIcons.Delete) { deleteTemplate(template) })
         }.show(e.component, e.x, e.y)
     }
 
     private fun showGroupContextMenu(e: MouseEvent, group: String) {
         JPopupMenu().apply {
-            add(createMenuItem("新建模板到此分组", AllIcons.Actions.AddFile) {
+            add(createMenuItem("新建模板到此分组", PluginIcons.Add) {
                 UploadTemplateDialog(project, null, group) { refreshTree() }.show()
             })
         }.show(e.component, e.x, e.y)

@@ -39,7 +39,8 @@ object SshConfigService {
                     private_key TEXT,
                     passphrase TEXT,
                     remote_dir TEXT DEFAULT '/tmp',
-                    use_local_key INTEGER DEFAULT 0
+                    use_local_key INTEGER DEFAULT 0,
+                    jump_hosts_json TEXT DEFAULT '[]'
                 )
             """.trimIndent()
             )
@@ -83,6 +84,12 @@ object SshConfigService {
             } catch (_: Exception) {
                 // 列已存在，忽略
             }
+
+            try {
+                stmt.executeUpdate("ALTER TABLE ssh_config ADD COLUMN jump_hosts_json TEXT DEFAULT '[]'")
+            } catch (_: Exception) {
+                // 列已存在，忽略
+            }
             
             // 迁移：添加 upload_template 脚本ID列（如果不存在）
             try {
@@ -112,7 +119,8 @@ object SshConfigService {
                             privateKey = rs.getString("private_key") ?: "",
                             passphrase = rs.getString("passphrase") ?: "",
                             remoteDir = rs.getString("remote_dir") ?: "/tmp",
-                            useLocalKey = try { rs.getInt("use_local_key") == 1 } catch (_: Exception) { false }
+                            useLocalKey = try { rs.getInt("use_local_key") == 1 } catch (_: Exception) { false },
+                            jumpHosts = JumpHostCodec.decode(try { rs.getString("jump_hosts_json") } catch (_: Exception) { "[]" })
                         )
                     )
                 }
@@ -125,8 +133,8 @@ object SshConfigService {
         connection.prepareStatement(
             """
             INSERT INTO ssh_config (id, group_name, name, host, port, username, auth_type, 
-                password, private_key, passphrase, remote_dir, use_local_key)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                password, private_key, passphrase, remote_dir, use_local_key, jump_hosts_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """.trimIndent()
         ).use { stmt ->
             stmt.setString(1, config.id)
@@ -141,6 +149,7 @@ object SshConfigService {
             stmt.setString(10, config.passphrase)
             stmt.setString(11, config.remoteDir)
             stmt.setInt(12, if (config.useLocalKey) 1 else 0)
+            stmt.setString(13, JumpHostCodec.encode(config.jumpHosts))
             stmt.executeUpdate()
         }
     }
@@ -149,7 +158,7 @@ object SshConfigService {
         connection.prepareStatement(
             """
             UPDATE ssh_config SET group_name=?, name=?, host=?, port=?, username=?, auth_type=?,
-                password=?, private_key=?, passphrase=?, remote_dir=?, use_local_key=?
+                password=?, private_key=?, passphrase=?, remote_dir=?, use_local_key=?, jump_hosts_json=?
             WHERE id=?
         """.trimIndent()
         ).use { stmt ->
@@ -164,7 +173,8 @@ object SshConfigService {
             stmt.setString(9, config.passphrase)
             stmt.setString(10, config.remoteDir)
             stmt.setInt(11, if (config.useLocalKey) 1 else 0)
-            stmt.setString(12, config.id)
+            stmt.setString(12, JumpHostCodec.encode(config.jumpHosts))
+            stmt.setString(13, config.id)
             stmt.executeUpdate()
         }
     }
@@ -198,7 +208,8 @@ object SshConfigService {
                         privateKey = rs.getString("private_key") ?: "",
                         passphrase = rs.getString("passphrase") ?: "",
                         remoteDir = rs.getString("remote_dir") ?: "/tmp",
-                        useLocalKey = try { rs.getInt("use_local_key") == 1 } catch (_: Exception) { false }
+                        useLocalKey = try { rs.getInt("use_local_key") == 1 } catch (_: Exception) { false },
+                        jumpHosts = JumpHostCodec.decode(try { rs.getString("jump_hosts_json") } catch (_: Exception) { "[]" })
                     )
                 }
             }
