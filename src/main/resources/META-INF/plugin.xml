@@ -51,7 +51,9 @@
         <li>Remote tree drag move / 远程文件树内拖拽移动</li>
         <li>Multi-select recursive delete / 多选递归批量删除</li>
         <li>Create and batch create from toolbar or directory context menu / 工具栏或目录右键新建与批量创建</li>
+        <li>Toolbar create targets current path, directory context menu targets clicked folder / 工具栏创建基于当前路径，目录右键创建基于被点击目录</li>
         <li>Multi-level path creation with trailing slash folder rule / 支持多级路径创建，末尾 / 表示文件夹</li>
+        <li>Confirmation dialog before create / 创建前显示确认提示</li>
         <li>Rename, delete / 重命名、删除</li>
         <li>Double-click to edit in IDEA / 双击在 IDEA 中编辑</li>
         <li>Auto-sync on save with notification / 保存时自动同步（带通知）</li>
@@ -113,7 +115,8 @@
         <li>新增：文件系统目录右键支持新建和批量创建</li>
         <li>新增：新建支持多级路径，输入 a/b/c 创建文件，输入 a/b/c/ 创建文件夹</li>
         <li>新增：批量创建支持多行输入，可同时创建文件和文件夹并自动补齐父目录</li>
-        <li>优化：工具栏创建入口调整为“新建 / 批量创建”，减少进入目录后的重复操作</li>
+        <li>优化：工具栏创建入口调整为“新建 / 批量创建”，并固定作用于当前所在目录</li>
+        <li>优化：目录右键创建直接作用于目标目录，减少进入目录后的重复操作</li>
         <li>优化：创建前增加确认提示，明确目标目录和待创建内容</li>
     </ul>
 

@@ -117,13 +117,13 @@ class SftpFileSystemPanel(
             override fun getActionUpdateThread() = ActionUpdateThread.BGT
         }
 
-        val createEntryAction = object : AnAction("新建", "在当前目录或所选目录创建文件/文件夹", PluginIcons.NewFile) {
-            override fun actionPerformed(e: AnActionEvent) = showCreateEntryDialog()
+        val createEntryAction = object : AnAction("新建", "在当前目录创建文件/文件夹", PluginIcons.NewFile) {
+            override fun actionPerformed(e: AnActionEvent) = showCreateEntryDialog(currentPath)
             override fun getActionUpdateThread() = ActionUpdateThread.BGT
         }
 
-        val batchCreateAction = object : AnAction("批量创建", "批量创建文件/文件夹", PluginIcons.NewFolder) {
-            override fun actionPerformed(e: AnActionEvent) = showBatchCreateDialog()
+        val batchCreateAction = object : AnAction("批量创建", "在当前目录批量创建文件/文件夹", PluginIcons.NewFolder) {
+            override fun actionPerformed(e: AnActionEvent) = showBatchCreateDialog(currentPath)
             override fun getActionUpdateThread() = ActionUpdateThread.BGT
         }
 
@@ -570,13 +570,6 @@ class SftpFileSystemPanel(
             .mapNotNull { (it.lastPathComponent as? DefaultMutableTreeNode)?.userObject as? FileNode }
     }
 
-    private fun resolveCreationTargetDirectory(): String {
-        return getPrimarySelectedFileNode()
-            ?.takeIf { it.isDirectory }
-            ?.path
-            ?: currentPath
-    }
-
     private fun getEffectiveSelectedFileNodes(): List<FileNode> {
         val nodesByPath = getSelectedFileNodes().associateBy { it.path }
         return SftpTreeOperationUtils.deduplicatePaths(nodesByPath.keys.toList())
@@ -705,7 +698,7 @@ class SftpFileSystemPanel(
         return newName
     }
 
-    private fun showCreateEntryDialog(targetDirectory: String = resolveCreationTargetDirectory()) {
+    private fun showCreateEntryDialog(targetDirectory: String = currentPath) {
         val dialog = RemoteCreateEntryDialog(project, targetDirectory)
         if (!dialog.showAndGet()) {
             return
@@ -727,7 +720,7 @@ class SftpFileSystemPanel(
         createEntries(targetDirectory, listOf(request), isBatch = false)
     }
 
-    private fun showBatchCreateDialog(targetDirectory: String = resolveCreationTargetDirectory()) {
+    private fun showBatchCreateDialog(targetDirectory: String = currentPath) {
         val dialog = RemoteBatchCreateDialog(project, targetDirectory)
         if (!dialog.showAndGet()) {
             return
