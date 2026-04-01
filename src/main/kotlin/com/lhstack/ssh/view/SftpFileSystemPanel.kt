@@ -117,6 +117,16 @@ class SftpFileSystemPanel(
             override fun getActionUpdateThread() = ActionUpdateThread.BGT
         }
 
+        val createEntryAction = object : AnAction("新建", "在当前目录创建文件/文件夹", PluginIcons.NewFile) {
+            override fun actionPerformed(e: AnActionEvent) = showCreateEntryDialog(currentPath)
+            override fun getActionUpdateThread() = ActionUpdateThread.BGT
+        }
+
+        val batchCreateAction = object : AnAction("批量创建", "在当前目录批量创建文件/文件夹", PluginIcons.NewFolder) {
+            override fun actionPerformed(e: AnActionEvent) = showBatchCreateDialog(currentPath)
+            override fun getActionUpdateThread() = ActionUpdateThread.BGT
+        }
+
         val deleteAction = object : AnAction("删除", "删除选中的文件或文件夹", PluginIcons.Delete) {
             override fun actionPerformed(e: AnActionEvent) = deleteSelected()
 
@@ -160,14 +170,8 @@ class SftpFileSystemPanel(
                 }
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
-            add(object : AnAction("新建文件夹", "在当前目录创建文件夹", PluginIcons.NewFolder) {
-                override fun actionPerformed(e: AnActionEvent) = createFolder()
-                override fun getActionUpdateThread() = ActionUpdateThread.BGT
-            })
-            add(object : AnAction("新建文件", "在当前目录创建文件", PluginIcons.NewFile) {
-                override fun actionPerformed(e: AnActionEvent) = createFile()
-                override fun getActionUpdateThread() = ActionUpdateThread.BGT
-            })
+            add(createEntryAction)
+            add(batchCreateAction)
             add(deleteAction)
         }
 
@@ -694,40 +698,191 @@ class SftpFileSystemPanel(
         return newName
     }
 
-    private fun createFolder() {
-        val name = Messages.showInputDialog(project, "文件夹名称:", "新建文件夹", null) ?: return
-        if (name.isBlank()) return
+    private fun showCreateEntryDialog(targetDirectory: String = currentPath) {
+        val dialog = RemoteCreateEntryDialog(project, targetDirectory)
+        if (!dialog.showAndGet()) {
+            return
+        }
 
+        val request = try {
+            dialog.request
+        } catch (e: IllegalArgumentException) {
+            Messages.showErrorDialog(project, e.message ?: "路径无效", "新建失败")
+            return
+        }
+
+        val typeLabel = if (request.isDirectory) "文件夹" else "文件"
+        val confirmMessage = "将在目录 $targetDirectory 下创建$typeLabel：${request.relativePath}${if (request.isDirectory) "/" else ""}\n是否继续？"
+        if (Messages.showYesNoDialog(project, confirmMessage, "确认创建", Messages.getQuestionIcon()) != Messages.YES) {
+            return
+        }
+
+        createEntries(targetDirectory, listOf(request), isBatch = false)
+    }
+
+    private fun showBatchCreateDialog(targetDirectory: String = currentPath) {
+        val dialog = RemoteBatchCreateDialog(project, targetDirectory)
+        if (!dialog.showAndGet()) {
+            return
+        }
+
+        val requests = try {
+            dialog.requests
+        } catch (e: IllegalArgumentException) {
+            Messages.showErrorDialog(project, e.message ?: "输入无效", "批量创建失败")
+            return
+        }
+
+        val confirmMessage = buildBatchCreateConfirmMessage(targetDirectory, requests)
+        if (Messages.showYesNoDialog(project, confirmMessage, "确认批量创建", Messages.getQuestionIcon()) != Messages.YES) {
+            return
+        }
+
+        createEntries(targetDirectory, requests, isBatch = true)
+    }
+
+    private fun buildBatchCreateConfirmMessage(targetDirectory: String, requests: List<RemoteCreateRequest>): String {
+        val fileCount = requests.count { !it.isDirectory }
+        val directoryCount = requests.size - fileCount
+        val preview = requests.take(10).joinToString("\n") {
+            val typeLabel = if (it.isDirectory) "[文件夹]" else "[文件]"
+            "$typeLabel ${it.relativePath}${if (it.isDirectory) "/" else ""}"
+        }
+        val more = if (requests.size > 10) "\n... 还有 ${requests.size - 10} 条" else ""
+        return buildString {
+            appendLine("目标目录: $targetDirectory")
+            appendLine("将创建 ${fileCount} 个文件，${directoryCount} 个文件夹。")
+            appendLine()
+            append(preview)
+            append(more)
+            appendLine()
+            append("是否继续？")
+        }
+    }
+
+    private fun createEntries(targetDirectory: String, requests: List<RemoteCreateRequest>, isBatch: Boolean) {
         executor.submit {
             try {
                 val sftp = connectionManager.getSftpClient()
-                sftp.mkdir("$currentPath/$name".replace("//", "/"))
-                SwingUtilities.invokeLater { refresh() }
+                SwingUtilities.invokeLater {
+                    statusLabel.text = if (isBatch) "正在批量创建..." else "正在创建..."
+                    statusLabel.icon = PluginIcons.Pending
+                }
+
+                val created = mutableListOf<RemoteCreateRequest>()
+                val skipped = mutableListOf<RemoteCreateRequest>()
+                val failures = mutableListOf<String>()
+
+                requests.forEach { request ->
+                    runCatching {
+                        val remotePath = UploadPathUtils.buildRemotePath(targetDirectory, request.relativePath)
+                        createSingleEntry(sftp, remotePath, request, allowSkipExisting = isBatch)
+                    }.onSuccess { result ->
+                        when (result) {
+                            CreateEntryResult.CREATED -> created += request
+                            CreateEntryResult.SKIPPED -> skipped += request
+                        }
+                    }.onFailure { error ->
+                        failures += "${request.relativePath}${if (request.isDirectory) "/" else ""}: ${error.message}"
+                    }
+                }
+
+                SwingUtilities.invokeLater {
+                    refreshVisibleDirectory(targetDirectory)
+                    when {
+                        !isBatch && failures.isEmpty() -> {
+                            val typeLabel = if (requests.first().isDirectory) "文件夹" else "文件"
+                            statusLabel.text = "已创建$typeLabel"
+                            statusLabel.icon = PluginIcons.Success
+                        }
+
+                        !isBatch -> {
+                            statusLabel.text = "创建失败"
+                            statusLabel.icon = PluginIcons.Error
+                            Messages.showErrorDialog(project, failures.first(), "创建失败")
+                        }
+
+                        else -> {
+                            statusLabel.text = "批量创建完成"
+                            statusLabel.icon = if (failures.isEmpty()) PluginIcons.Success else PluginIcons.Error
+                            Messages.showInfoMessage(project, buildBatchCreateResultMessage(created, skipped, failures), "批量创建结果")
+                        }
+                    }
+                }
             } catch (e: Exception) {
                 SwingUtilities.invokeLater {
+                    statusLabel.text = "创建失败"
+                    statusLabel.icon = PluginIcons.Error
                     Messages.showErrorDialog(project, "创建失败: ${e.message}", "错误")
                 }
             }
         }
     }
 
-    private fun createFile() {
-        val name = Messages.showInputDialog(project, "文件名称:", "新建文件", null) ?: return
-        if (name.isBlank()) return
+    private fun createSingleEntry(
+        sftp: SftpClient,
+        remotePath: String,
+        request: RemoteCreateRequest,
+        allowSkipExisting: Boolean
+    ): CreateEntryResult {
+        val existing = statOrNull(sftp, remotePath)
+        if (existing != null) {
+            if (allowSkipExisting && request.isDirectory && existing.isDirectory) {
+                return CreateEntryResult.SKIPPED
+            }
+            if (allowSkipExisting && !request.isDirectory && !existing.isDirectory) {
+                return CreateEntryResult.SKIPPED
+            }
+            val existingType = if (existing.isDirectory) "文件夹" else "文件"
+            if (allowSkipExisting) {
+                throw IllegalStateException("目标已存在且类型不匹配: $remotePath（现有类型: $existingType）")
+            }
+            throw IllegalStateException("目标已存在: $remotePath（现有类型: $existingType）")
+        }
 
-        executor.submit {
-            try {
-                val sftp = connectionManager.getSftpClient()
-                val remotePath = "$currentPath/$name".replace("//", "/")
-                // 创建空文件
-                sftp.write(remotePath).use { }
-                SwingUtilities.invokeLater { refresh() }
-            } catch (e: Exception) {
-                SwingUtilities.invokeLater {
-                    Messages.showErrorDialog(project, "创建失败: ${e.message}", "错误")
+        if (request.isDirectory) {
+            ensureRemoteDirectory(sftp, remotePath)
+        } else {
+            ensureRemoteDirectory(sftp, SftpTreeOperationUtils.parentDirectory(remotePath))
+            sftp.write(remotePath).use { }
+        }
+        return CreateEntryResult.CREATED
+    }
+
+    private fun statOrNull(sftp: SftpClient, path: String): SftpClient.Attributes? {
+        return try {
+            sftp.stat(path)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun buildBatchCreateResultMessage(
+        created: List<RemoteCreateRequest>,
+        skipped: List<RemoteCreateRequest>,
+        failures: List<String>
+    ): String {
+        return buildString {
+            appendLine("成功 ${created.size} 项，跳过 ${skipped.size} 项，失败 ${failures.size} 项。")
+            if (skipped.isNotEmpty()) {
+                appendLine()
+                appendLine("跳过：")
+                skipped.take(10).forEach {
+                    appendLine("- ${it.relativePath}${if (it.isDirectory) "/" else ""}")
+                }
+                if (skipped.size > 10) {
+                    appendLine("... 还有 ${skipped.size - 10} 项")
                 }
             }
-        }
+            if (failures.isNotEmpty()) {
+                appendLine()
+                appendLine("失败：")
+                failures.take(10).forEach { appendLine("- $it") }
+                if (failures.size > 10) {
+                    appendLine("... 还有 ${failures.size - 10} 项")
+                }
+            }
+        }.trim()
     }
 
     private fun deleteSelected() {
@@ -780,6 +935,13 @@ class SftpFileSystemPanel(
                 add(JMenuItem("打开", PluginIcons.Open).apply {
                     addActionListener { navigateTo(primaryNode.path) }
                 })
+                add(JMenuItem("新建...", PluginIcons.NewFile).apply {
+                    addActionListener { showCreateEntryDialog(primaryNode.path) }
+                })
+                add(JMenuItem("批量创建...", PluginIcons.NewFolder).apply {
+                    addActionListener { showBatchCreateDialog(primaryNode.path) }
+                })
+                addSeparator()
                 add(JMenuItem("上传到此目录", PluginIcons.Upload).apply {
                     addActionListener { uploadToDirectory(primaryNode.path) }
                 })
@@ -1130,6 +1292,11 @@ data class FileNode(val path: String, val isDirectory: Boolean, val size: Long, 
 }
 
 private data class RemoteTreeTransferData(val paths: List<String>)
+
+private enum class CreateEntryResult {
+    CREATED,
+    SKIPPED
+}
 
 class FileTreeRenderer : ColoredTreeCellRenderer() {
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm")
