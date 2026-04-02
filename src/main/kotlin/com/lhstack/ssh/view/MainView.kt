@@ -262,9 +262,9 @@ class MainView(
     private fun deleteConfig(config: SshConfig) {
         val result = Messages.showYesNoDialog(
             project,
-            "确定要删除 \"${config.name}\" 吗？",
+            "确定要删除 SSH 配置 \"${config.name}\" 吗？删除后将无法继续使用该连接配置，关联脚本也会一并删除。",
             "确认删除",
-            Messages.getQuestionIcon()
+            Messages.getWarningIcon()
         )
         if (result == Messages.YES) {
             SshConfigService.removeConfig(config.id)
@@ -569,6 +569,17 @@ class MainView(
             )
             
             if (overwrite == Messages.CANCEL) return@let
+            if (overwrite == Messages.YES) {
+                val confirmed = Messages.showYesNoDialog(
+                    project,
+                    "将覆盖同名配置，并可能更新关联脚本与上传模板引用。\n建议先导出备份后再继续。\n\n是否仍要执行覆盖导入？",
+                    "确认覆盖导入",
+                    Messages.getWarningIcon()
+                )
+                if (confirmed != Messages.YES) {
+                    return@let
+                }
+            }
             
             ConfigExportImportService.importFromFile(file, overwrite == Messages.YES).fold(
                 onSuccess = { result ->

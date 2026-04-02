@@ -329,9 +329,9 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
     private fun deleteTemplate(template: UploadTemplate) {
         val result = Messages.showYesNoDialog(
             project,
-            "确定要删除 \"${template.name}\" 吗？",
+            "确定要删除上传模板 \"${template.name}\" 吗？仅删除模板记录，不会删除本地文件或远程文件。",
             "确认删除",
-            Messages.getQuestionIcon()
+            Messages.getWarningIcon()
         )
         if (result == Messages.YES) {
             SshConfigService.removeUploadTemplate(template.id)

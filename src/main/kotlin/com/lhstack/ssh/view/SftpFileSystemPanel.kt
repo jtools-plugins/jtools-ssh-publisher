@@ -21,6 +21,9 @@ import com.lhstack.ssh.model.TransferTask
 import com.lhstack.ssh.service.RemoteFileEditorService
 import com.lhstack.ssh.service.SshConnectionManager
 import com.lhstack.ssh.service.TransferTaskManager
+import com.lhstack.ssh.util.ConfirmationContent
+import com.lhstack.ssh.util.RemotePathItem
+import com.lhstack.ssh.util.RemoteRiskOperationUtils
 import com.lhstack.ssh.util.SftpTreeOperationUtils
 import com.lhstack.ssh.util.UploadPlan
 import com.lhstack.ssh.util.UploadPlanItem
@@ -888,17 +891,13 @@ class SftpFileSystemPanel(
     private fun deleteSelected() {
         val selectedNodes = getEffectiveSelectedFileNodes()
         if (selectedNodes.isEmpty()) return
-        val isBatch = selectedNodes.size > 1
-
-        val message = if (isBatch) {
-            "确定递归删除选中的 ${selectedNodes.size} 项吗？"
-        } else {
-            "确定删除 \"${selectedNodes.first().name}\" 吗？"
-        }
-
-        if (Messages.showYesNoDialog(project, message, if (isBatch) "确认批量删除" else "确认删除", Messages.getWarningIcon()) != Messages.YES) {
+        val confirmation = RemoteRiskOperationUtils.buildDeleteConfirmation(
+            selectedNodes.map { RemotePathItem(it.path, it.isDirectory) }
+        )
+        if (Messages.showYesNoDialog(project, confirmation.message, confirmation.title, Messages.getWarningIcon()) != Messages.YES) {
             return
         }
+        val isBatch = selectedNodes.size > 1
 
         executor.submit {
             try {
@@ -1043,10 +1042,25 @@ class SftpFileSystemPanel(
             return
         }
 
+        val moveCandidates = selectedNodes.filter { node ->
+            UploadPathUtils.buildRemotePath(targetDirectory, node.name) != node.path
+        }
+        if (moveCandidates.isEmpty()) {
+            return
+        }
+
+        val confirmation = RemoteRiskOperationUtils.buildMoveConfirmation(
+            items = moveCandidates.map { RemotePathItem(it.path, it.isDirectory) },
+            targetDirectory = targetDirectory
+        )
+        if (Messages.showYesNoDialog(project, confirmation.message, confirmation.title, Messages.getWarningIcon()) != Messages.YES) {
+            return
+        }
+
         executor.submit {
             try {
                 val sftp = connectionManager.getSftpClient()
-                val movePairs = selectedNodes.mapNotNull { node ->
+                val movePairs = moveCandidates.mapNotNull { node ->
                     val destination = UploadPathUtils.buildRemotePath(targetDirectory, node.name)
                     if (destination == node.path) null else node.path to destination
                 }
@@ -1259,7 +1273,7 @@ class SftpFileSystemPanel(
                     support.isDataFlavorSupported(DataFlavor.javaFileListFlavor) -> {
                         @Suppress("UNCHECKED_CAST")
                         val files = support.transferable.getTransferData(DataFlavor.javaFileListFlavor) as List<File>
-                        queueUploadPlan(SftpTreeOperationUtils.buildUploadPlan(files, targetDirectory), targetDirectory)
+                        confirmAndQueueDragUpload(SftpTreeOperationUtils.buildUploadPlan(files, targetDirectory), targetDirectory)
                         true
                     }
 
@@ -1276,6 +1290,89 @@ class SftpFileSystemPanel(
                 false
             }
         }
+    }
+
+    private fun confirmAndQueueDragUpload(plan: UploadPlan, targetDirectory: String) {
+        if (plan.directories.isEmpty() && plan.files.isEmpty()) {
+            return
+        }
+
+        executor.submit {
+            try {
+                val sftp = connectionManager.getSftpClient()
+                val existingEntries = collectExistingUploadEntries(sftp, plan)
+                val analysis = RemoteRiskOperationUtils.analyzeUploadConflicts(plan, existingEntries)
+
+                SwingUtilities.invokeLater {
+                    when (showUploadConfirmationDialog(targetDirectory, analysis)) {
+                        UploadConfirmationDecision.CANCEL -> Unit
+                        UploadConfirmationDecision.OVERWRITE -> queueUploadPlan(plan, targetDirectory)
+                        UploadConfirmationDecision.SKIP_CONFLICTS -> {
+                            val filteredPlan = filterUploadPlanForSkip(plan, analysis)
+                            if (filteredPlan.directories.isEmpty() && filteredPlan.files.isEmpty()) {
+                                Messages.showInfoMessage(project, "所有待上传项都与远程目标冲突，未添加上传任务。", "已跳过冲突项")
+                            } else {
+                                queueUploadPlan(filteredPlan, targetDirectory)
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                SwingUtilities.invokeLater {
+                    Messages.showErrorDialog(project, "上传前检查失败: ${e.message}", "错误")
+                }
+            }
+        }
+    }
+
+    private fun collectExistingUploadEntries(sftp: SftpClient, plan: UploadPlan): Map<String, Boolean> {
+        val existingEntries = linkedMapOf<String, Boolean>()
+        plan.directories.sorted().forEach { remotePath ->
+            statOrNull(sftp, remotePath)?.let { existingEntries[remotePath] = it.isDirectory }
+        }
+        plan.files.map { it.remotePath }.sorted().forEach { remotePath ->
+            statOrNull(sftp, remotePath)?.let { existingEntries[remotePath] = it.isDirectory }
+        }
+        return existingEntries
+    }
+
+    private fun showUploadConfirmationDialog(
+        targetDirectory: String,
+        analysis: com.lhstack.ssh.util.UploadConflictAnalysis
+    ): UploadConfirmationDecision {
+        val confirmation = RemoteRiskOperationUtils.buildUploadConfirmation(targetDirectory, analysis)
+        return if (analysis.conflicts.isEmpty()) {
+            val result = Messages.showYesNoDialog(project, "${confirmation.message}\n\n是否继续？", confirmation.title, Messages.getQuestionIcon())
+            if (result == Messages.YES) UploadConfirmationDecision.OVERWRITE else UploadConfirmationDecision.CANCEL
+        } else {
+            when (
+                Messages.showDialog(
+                    project,
+                    confirmation.message,
+                    confirmation.title,
+                    arrayOf("覆盖上传", "跳过冲突项", "取消"),
+                    1,
+                    Messages.getWarningIcon()
+                )
+            ) {
+                0 -> UploadConfirmationDecision.OVERWRITE
+                1 -> UploadConfirmationDecision.SKIP_CONFLICTS
+                else -> UploadConfirmationDecision.CANCEL
+            }
+        }
+    }
+
+    private fun filterUploadPlanForSkip(
+        plan: UploadPlan,
+        analysis: com.lhstack.ssh.util.UploadConflictAnalysis
+    ): UploadPlan {
+        val conflictsByPath = analysis.conflicts.associateBy { it.remotePath }
+        val directories = plan.directories.filterTo(linkedSetOf()) { remotePath ->
+            val conflict = conflictsByPath[remotePath] ?: return@filterTo true
+            conflict.existingDirectory
+        }
+        val files = plan.files.filter { item -> item.remotePath !in conflictsByPath }
+        return UploadPlan(directories = directories, files = files)
     }
 
     override fun dispose() {
@@ -1296,6 +1393,12 @@ private data class RemoteTreeTransferData(val paths: List<String>)
 private enum class CreateEntryResult {
     CREATED,
     SKIPPED
+}
+
+private enum class UploadConfirmationDecision {
+    OVERWRITE,
+    SKIP_CONFLICTS,
+    CANCEL
 }
 
 class FileTreeRenderer : ColoredTreeCellRenderer() {

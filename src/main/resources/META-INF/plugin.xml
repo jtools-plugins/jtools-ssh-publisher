@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.lhstack.ssh-publisher</id>
     <name>JTools SSH Publisher</name>
-    <version>1.2.2</version>
+    <version>1.2.3</version>
     <vendor email="lhstack@foxmail.com" url="https://github.com/lhstack">lhstack</vendor>
 
     <description><![CDATA[
@@ -49,11 +49,14 @@
         <li>Batch upload to current/selected directory / 批量上传到当前或所选目录</li>
         <li>Drag local files/directories to upload recursively / 支持拖拽本地文件和目录递归上传</li>
         <li>Remote tree drag move / 远程文件树内拖拽移动</li>
+        <li>Drag upload conflict check with confirm / 拖拽上传冲突检查与确认</li>
+        <li>Drag move confirm for risky operations / 拖拽移动二次确认</li>
         <li>Multi-select recursive delete / 多选递归批量删除</li>
         <li>Create and batch create from toolbar or directory context menu / 工具栏或目录右键新建与批量创建</li>
         <li>Toolbar create targets current path, directory context menu targets clicked folder / 工具栏创建基于当前路径，目录右键创建基于被点击目录</li>
         <li>Multi-level path creation with trailing slash folder rule / 支持多级路径创建，末尾 / 表示文件夹</li>
         <li>Confirmation dialog before create / 创建前显示确认提示</li>
+        <li>Enhanced delete warning for irreversible actions / 删除前增强不可恢复风险提示</li>
         <li>Rename, delete / 重命名、删除</li>
         <li>Double-click to edit in IDEA / 双击在 IDEA 中编辑</li>
         <li>Auto-sync on save with notification / 保存时自动同步（带通知）</li>
@@ -101,6 +104,7 @@
     <ul>
         <li><b>Export all or selected configs / 导出全部或选择性导出</b></li>
         <li><b>Import with overwrite/skip option / 导入支持覆盖或跳过</b></li>
+        <li><b>Secondary confirmation before overwrite import / 覆盖导入前二次确认</b></li>
         <li><b>Preserve expand state on refresh / 刷新时保持展开状态</b></li>
         <li><b>Collapsible top panel with layout restore / 上方面板支持收起展开并恢复分栏比例</b></li>
     </ul>
@@ -110,6 +114,15 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>1.2.3</b>
+    <ul>
+        <li>新增：远程文件树内拖拽移动支持二次确认，避免误移动文件和目录</li>
+        <li>新增：本地拖拽上传到远程目录时支持同名冲突检查，并可选择覆盖上传、跳过冲突项或取消</li>
+        <li>新增：导入配置选择“覆盖”时增加二次确认，明确脚本和模板引用的覆盖风险</li>
+        <li>优化：远程文件和目录删除提示增强，明确递归删除与不可恢复风险</li>
+        <li>优化：SSH 配置删除和上传模板删除提示增强，明确删除影响范围</li>
+    </ul>
+
     <b>1.2.2</b>
     <ul>
         <li>新增：文件系统目录右键支持新建和批量创建</li>
