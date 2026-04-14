@@ -320,6 +320,6 @@ build/distributions/JTools-SSH-Publisher-*.zip
 
 
 | 赞助方 | 赞助内容 | 时间 |
-|--------|----------|------|
+|:------:|:------:|:------:|
 | <img src="https://github.com/user-attachments/assets/d6ad8f62-89b6-49f4-a927-dc6f3ed6ad6a" width="50" /><br />[不要吃太饱]| 感谢对本项目的支持 | 2026.04.14 |
 
