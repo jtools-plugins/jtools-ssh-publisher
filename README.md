@@ -321,5 +321,5 @@ build/distributions/JTools-SSH-Publisher-*.zip
 
 | 赞助方 | 赞助内容 | 时间 |
 |--------|----------|------|
-| [不要吃太饱]![78babe50f605a55a97d2b0b151259130](https://github.com/user-attachments/assets/d6ad8f62-89b6-49f4-a927-dc6f3ed6ad6a) | ¥20 / 感谢对本项目的支持 | 2026.04.14 |
+| <img src="https://github.com/user-attachments/assets/d6ad8f62-89b6-49f4-a927-dc6f3ed6ad6a" width="50" /><br />[不要吃太饱]| 感谢对本项目的支持 | 2026.04.14 |
 
