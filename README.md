@@ -311,10 +311,9 @@ build/distributions/JTools-SSH-Publisher-*.zip
 
 欢迎提交 Issue 和 Pull Request！
 
-![4cad3ae792425d78896b37f2905fe2aa](https://github.com/user-attachments/assets/873db8fa-e871-4513-ad3b-1e306992e7c1)
-
+<img src="https://github.com/user-attachments/assets/873db8fa-e871-4513-ad3b-1e306992e7c1" width="100" />
 ## 💖 赞助与支持
-![b8b8b180911a804d581e0b169cf44ca8](https://github.com/user-attachments/assets/91cfca45-4c8e-42f9-ac31-518d9b917c4f)
+<img src="https://github.com/user-attachments/assets/91cfca45-4c8e-42f9-ac31-518d9b917c4f" width="100" />
 
 本项目由以下伙伴赞助支持，感谢他们的慷慨贡献：
 
