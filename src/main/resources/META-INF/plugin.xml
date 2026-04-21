@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.lhstack.ssh-publisher</id>
     <name>JTools SSH Publisher</name>
-    <version>1.2.3</version>
+    <version>1.2.4</version>
     <vendor email="lhstack@foxmail.com" url="https://github.com/lhstack">lhstack</vendor>
 
     <description><![CDATA[
@@ -20,10 +20,13 @@
         <li>Use local key (~/.ssh/id_rsa) / 使用本地默认密钥</li>
         <li>Load key from file picker / 从文件选择器加载密钥</li>
         <li><b>Jump host chain support / 支持跳板链连接</b></li>
+        <li><b>Native context action popup with icons & search / 原生右键动作弹窗，支持图标与搜索</b></li>
+        <li><b>Right-click add to group & rename group / 支持分组右键新建配置与重命名</b></li>
         <li>Connection testing / 连接测试</li>
         <li>Heartbeat keep-alive / 心跳保活</li>
         <li><b>Pre/Post scripts with list+editor UI / 前置/后置脚本（列表+编辑器方式）</b></li>
         <li><b>Non-modal edit dialog / 非模态编辑对话框</b></li>
+        <li><b>Improved form alignment in SSH edit dialog / 优化 SSH 编辑对话框表单对齐</b></li>
     </ul>
 
     <h4>Terminal / 终端</h4>
@@ -52,11 +55,13 @@
         <li>Drag upload conflict check with confirm / 拖拽上传冲突检查与确认</li>
         <li>Drag move confirm for risky operations / 拖拽移动二次确认</li>
         <li>Multi-select recursive delete / 多选递归批量删除</li>
+        <li><b>Dynamic context menu by directory/file/multi-select / 按目录、文件、多选动态展示右键菜单</b></li>
         <li>Create and batch create from toolbar or directory context menu / 工具栏或目录右键新建与批量创建</li>
         <li>Toolbar create targets current path, directory context menu targets clicked folder / 工具栏创建基于当前路径，目录右键创建基于被点击目录</li>
         <li>Multi-level path creation with trailing slash folder rule / 支持多级路径创建，末尾 / 表示文件夹</li>
         <li>Confirmation dialog before create / 创建前显示确认提示</li>
         <li>Enhanced delete warning for irreversible actions / 删除前增强不可恢复风险提示</li>
+        <li>Open, create, upload, edit, download, copy path, properties from context menu / 右键支持打开、新建、上传、编辑、下载、复制路径、属性等操作</li>
         <li>Rename, delete / 重命名、删除</li>
         <li>Double-click to edit in IDEA / 双击在 IDEA 中编辑</li>
         <li>Auto-sync on save with notification / 保存时自动同步（带通知）</li>
@@ -91,6 +96,7 @@
     <ul>
         <li><b>Save upload tasks as templates / 保存上传任务为模板</b></li>
         <li><b>Group management / 分组管理</b></li>
+        <li><b>Right-click add to group & rename template group / 支持模板分组右键新建与重命名</b></li>
         <li>Configure local file, server, remote path / 配置本地文件、服务器、远程路径</li>
         <li>Custom remote filename / 自定义远程文件名</li>
         <li><b>Select server scripts or write temp scripts / 选择服务器脚本或临时脚本</b></li>
@@ -105,6 +111,7 @@
         <li><b>Export all or selected configs / 导出全部或选择性导出</b></li>
         <li><b>Import with overwrite/skip option / 导入支持覆盖或跳过</b></li>
         <li><b>Secondary confirmation before overwrite import / 覆盖导入前二次确认</b></li>
+        <li><b>Rename SSH groups and template groups / 支持重命名 SSH 分组和模板分组</b></li>
         <li><b>Preserve expand state on refresh / 刷新时保持展开状态</b></li>
         <li><b>Collapsible top panel with layout restore / 上方面板支持收起展开并恢复分栏比例</b></li>
     </ul>
@@ -114,6 +121,15 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>1.2.4</b>
+    <ul>
+        <li>优化：SSH 配置、上传模板、文件系统右键菜单统一切换为 IDEA 原生动作弹窗，支持图标展示与操作搜索</li>
+        <li>新增：SSH 连接分组支持右键重命名，并可直接在分组下新建配置</li>
+        <li>新增：上传模板分组支持右键重命名，并可直接在分组下新建模板</li>
+        <li>优化：文件系统右键菜单按当前选择动态展示打开、新建、批量创建、上传、编辑、下载、复制路径、属性、删除等操作</li>
+        <li>修复：SSH 配置编辑对话框中标签与表单内容未对齐的问题</li>
+    </ul>
+
     <b>1.2.3</b>
     <ul>
         <li>新增：远程文件树内拖拽移动支持二次确认，避免误移动文件和目录</li>

@@ -1,5 +1,8 @@
 package com.lhstack.ssh.view
 
+import com.intellij.notification.Notification
+import com.intellij.notification.NotificationType
+import com.intellij.notification.Notifications
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.fileChooser.FileChooser
@@ -7,11 +10,13 @@ import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.SimpleToolWindowPanel
+import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.ColoredTreeCellRenderer
 import com.intellij.ui.JBSplitter
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.TreeSpeedSearch
+import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.treeStructure.Tree
 import com.lhstack.ssh.PluginIcons
@@ -19,8 +24,10 @@ import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.service.ConfigExportImportService
 import com.lhstack.ssh.service.SshConfigService
 import com.lhstack.ssh.service.TransferTaskManager
+import com.lhstack.ssh.util.AnActionFactory
 import java.awt.BorderLayout
 import java.awt.Dimension
+import java.awt.Point
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.io.File
@@ -164,6 +171,7 @@ class MainView(
                         append(userObject.name, SimpleTextAttributes.REGULAR_ATTRIBUTES)
                         append("  ${userObject.host}:${userObject.port}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                     }
+
                     is String -> {
                         icon = PluginIcons.Folder
                         append(userObject, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
@@ -204,28 +212,48 @@ class MainView(
     }
 
     private fun showConfigContextMenu(e: MouseEvent, config: SshConfig) {
-        JPopupMenu().apply {
-            add(createMenuItem("打开终端", PluginIcons.Terminal) { openTerminal(config) })
-            add(createMenuItem("文件系统", PluginIcons.Folder) { openFileSystem(config) })
-            add(createMenuItem("上传文件", PluginIcons.Upload) { openUploadDialog(config) })
-            addSeparator()
-            add(createMenuItem("编辑", PluginIcons.Edit) { editConfig(config) })
-            add(createMenuItem("复制", PluginIcons.Copy) { copyConfig(config) })
-            add(createMenuItem("删除", PluginIcons.Delete) { deleteConfig(config) })
-        }.show(e.component, e.x, e.y)
+
+        val openTerminalAction = AnActionFactory.create("打开终端", PluginIcons.Terminal){ openTerminal(config)}
+        val fileSystemAction = AnActionFactory.create("文件系统", PluginIcons.Folder){openFileSystem(config)}
+        val uploadFileAction = AnActionFactory.create("上传文件", PluginIcons.Upload){openUploadDialog(config)}
+        val editAction = AnActionFactory.create("编辑", PluginIcons.Edit){editConfig(config)}
+        val copyAction = AnActionFactory.create("复制", PluginIcons.Copy){copyConfig(config)}
+        val deleteAction = AnActionFactory.create("删除", PluginIcons.Delete){deleteConfig(config)}
+        JBPopupFactory.getInstance().createActionGroupPopup("操作", DefaultActionGroup().apply {
+            this.add(openTerminalAction)
+            this.add(fileSystemAction)
+            this.add(uploadFileAction)
+            this.addSeparator()
+            this.add(editAction)
+            this.add(copyAction)
+            this.add(deleteAction)
+        }, DataContext.EMPTY_CONTEXT, JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false)
+            .show(RelativePoint(e.component, Point(e.x, e.y)))
+
     }
 
     private fun showGroupContextMenu(e: MouseEvent, group: String) {
-        JPopupMenu().apply {
-            add(createMenuItem("新建配置到此分组", PluginIcons.Add) {
+        JBPopupFactory.getInstance().createActionGroupPopup("操作", DefaultActionGroup().apply {
+            this.add(AnActionFactory.create("新建配置到此分组", PluginIcons.Add){
                 AddItemDialog(project, null, group) { refreshTree() }.show()
             })
-        }.show(e.component, e.x, e.y)
+
+            this.add(AnActionFactory.create("重命名此分组", PluginIcons.Rename){
+                val newGroup =
+                    Messages.showInputDialog(project, "请输入新的分组名称", "重命名", PluginIcons.Rename)
+                if(newGroup?.isBlank() == true) {
+                    Notifications.Bus.notify(Notification("JToolsSshPublisher","新的分组名称不能为空", NotificationType.ERROR))
+                    return@create;
+                }
+                newGroup?.let {
+                    SshConfigService.renameGroup(group,it)
+                    refreshTree()
+                }
+            })
+        }, DataContext.EMPTY_CONTEXT, JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false)
+            .show(RelativePoint(e.component, Point(e.x, e.y)))
     }
 
-    private fun createMenuItem(text: String, icon: Icon, action: () -> Unit): JMenuItem {
-        return JMenuItem(text, icon).apply { addActionListener { action() } }
-    }
 
     private fun openTerminal(config: SshConfig) {
         val terminalPanel = SshTerminalPanel(parentDisposable, config, project)
@@ -284,7 +312,7 @@ class MainView(
                 }
             }
         }
-        
+
         rootNode.removeAllChildren()
 
         val configsByGroup = SshConfigService.getConfigsByGroup()
@@ -297,7 +325,7 @@ class MainView(
         }
 
         treeModel.reload()
-        
+
         // 恢复之前展开的组
         for (i in 0 until rootNode.childCount) {
             val groupNode = rootNode.getChildAt(i) as? DefaultMutableTreeNode
@@ -307,7 +335,7 @@ class MainView(
             }
         }
     }
-    
+
     /**
      * 展开所有节点
      */
@@ -320,7 +348,7 @@ class MainView(
             }
         }
     }
-    
+
     /**
      * 收起所有节点
      */
@@ -343,6 +371,7 @@ class MainView(
                         1 -> uploadTemplatePanel.showNewTemplateDialog()
                     }
                 }
+
                 override fun update(e: AnActionEvent) {
                     if (!areTopPanelControlsVisible()) {
                         e.presentation.isVisible = false
@@ -355,6 +384,7 @@ class MainView(
                     }
                     e.presentation.isVisible = leftTabs.selectedIndex in 0..1
                 }
+
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
 
@@ -362,9 +392,11 @@ class MainView(
                 override fun actionPerformed(e: AnActionEvent) {
                     MultiFileUploadDialog(project).show()
                 }
+
                 override fun update(e: AnActionEvent) {
                     e.presentation.isVisible = areTopPanelControlsVisible() && leftTabs.selectedIndex == 0
                 }
+
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
 
@@ -376,9 +408,11 @@ class MainView(
                         2 -> transferTaskPanel.refreshList()
                     }
                 }
+
                 override fun update(e: AnActionEvent) {
                     e.presentation.isVisible = areTopPanelControlsVisible()
                 }
+
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
 
@@ -391,9 +425,11 @@ class MainView(
                         1 -> uploadTemplatePanel.expandAllNodes()
                     }
                 }
+
                 override fun update(e: AnActionEvent) {
                     e.presentation.isVisible = areTopPanelControlsVisible() && leftTabs.selectedIndex in 0..1
                 }
+
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
 
@@ -404,31 +440,37 @@ class MainView(
                         1 -> uploadTemplatePanel.collapseAllNodes()
                     }
                 }
+
                 override fun update(e: AnActionEvent) {
                     e.presentation.isVisible = areTopPanelControlsVisible() && leftTabs.selectedIndex in 0..1
                 }
+
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
-            
+
             addSeparator()
-            
+
             add(object : AnAction({ "导出配置" }, PluginIcons.Export) {
                 override fun actionPerformed(e: AnActionEvent) {
                     exportConfigs()
                 }
+
                 override fun update(e: AnActionEvent) {
                     e.presentation.isVisible = areTopPanelControlsVisible()
                 }
+
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
-            
+
             add(object : AnAction({ "导入配置" }, PluginIcons.Import) {
                 override fun actionPerformed(e: AnActionEvent) {
                     importConfigs()
                 }
+
                 override fun update(e: AnActionEvent) {
                     e.presentation.isVisible = areTopPanelControlsVisible()
                 }
+
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
         }
@@ -456,7 +498,7 @@ class MainView(
         Disposer.dispose(terminalTabs)
         TransferTaskManager.shutdown()
     }
-    
+
     /**
      * 导出配置
      */
@@ -470,24 +512,24 @@ class MainView(
             0,
             Messages.getQuestionIcon()
         )
-        
+
         when (choice) {
             0 -> exportAllConfigs()
             1 -> exportSelectedConfigs()
         }
     }
-    
+
     /**
      * 导出全部配置
      */
     private fun exportAllConfigs() {
         val descriptor = FileChooserDescriptorFactory.createSingleFolderDescriptor()
         descriptor.title = "选择导出目录"
-        
+
         FileChooser.chooseFile(descriptor, project, null)?.let { vf ->
             val fileName = "ssh-configs-${System.currentTimeMillis()}.json"
             val file = File(vf.path, fileName)
-            
+
             ConfigExportImportService.exportToFile(file).fold(
                 onSuccess = { count ->
                     Messages.showInfoMessage(
@@ -506,7 +548,7 @@ class MainView(
             )
         }
     }
-    
+
     /**
      * 选择导出配置
      */
@@ -519,14 +561,14 @@ class MainView(
                 Messages.showWarningDialog(project, "未选择任何配置", "提示")
                 return
             }
-            
+
             val descriptor = FileChooserDescriptorFactory.createSingleFolderDescriptor()
             descriptor.title = "选择导出目录"
-            
+
             FileChooser.chooseFile(descriptor, project, null)?.let { vf ->
                 val fileName = "ssh-configs-${System.currentTimeMillis()}.json"
                 val file = File(vf.path, fileName)
-                
+
                 ConfigExportImportService.exportSelectedToFile(file, selectedIds, selectedTemplateIds).fold(
                     onSuccess = { count ->
                         Messages.showInfoMessage(
@@ -546,17 +588,17 @@ class MainView(
             }
         }
     }
-    
+
     /**
      * 导入配置
      */
     private fun importConfigs() {
         val descriptor = FileChooserDescriptorFactory.createSingleFileDescriptor("json")
         descriptor.title = "选择配置文件"
-        
+
         FileChooser.chooseFile(descriptor, project, null)?.let { vf ->
             val file = File(vf.path)
-            
+
             // 询问是否覆盖
             val overwrite = Messages.showYesNoCancelDialog(
                 project,
@@ -567,7 +609,7 @@ class MainView(
                 "取消",
                 Messages.getQuestionIcon()
             )
-            
+
             if (overwrite == Messages.CANCEL) return@let
             if (overwrite == Messages.YES) {
                 val confirmed = Messages.showYesNoDialog(
@@ -580,7 +622,7 @@ class MainView(
                     return@let
                 }
             }
-            
+
             ConfigExportImportService.importFromFile(file, overwrite == Messages.YES).fold(
                 onSuccess = { result ->
                     refreshTree()

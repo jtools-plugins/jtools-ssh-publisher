@@ -221,29 +221,6 @@ object SshConfigService {
         return getConfigs().groupBy { it.group.ifEmpty { "默认" } }
     }
 
-    /**
-     * 检查 group+name 是否已存在（排除指定 id）
-     */
-    fun existsByGroupAndName(group: String, name: String, excludeId: String? = null): Boolean {
-        val sql = if (excludeId != null) {
-            "SELECT 1 FROM ssh_config WHERE group_name=? AND name=? AND id<>?"
-        } else {
-            "SELECT 1 FROM ssh_config WHERE group_name=? AND name=?"
-        }
-        println("[DEBUG] existsByGroupAndName: group=$group, name=$name, excludeId=$excludeId, sql=$sql")
-        connection.prepareStatement(sql).use { stmt ->
-            stmt.setString(1, group)
-            stmt.setString(2, name)
-            if (excludeId != null) {
-                stmt.setString(3, excludeId)
-            }
-            stmt.executeQuery().use { rs ->
-                val exists = rs.next()
-                println("[DEBUG] existsByGroupAndName result: $exists")
-                return exists
-            }
-        }
-    }
 
     // ========== 脚本管理 ==========
 
@@ -434,6 +411,22 @@ object SshConfigService {
         try {
             connection.close()
         } catch (_: Exception) {
+        }
+    }
+
+    fun renameGroup(group: String, newGroup: String) {
+        connection.prepareStatement("UPDATE ssh_config SET group_name = ? WHERE group_name = ?").use { stmt ->
+            stmt.setString(1, newGroup)
+            stmt.setString(2, group)
+            stmt.executeUpdate()
+        }
+    }
+
+    fun renameUploadTempGroup(group: String, newGroup: String) {
+        connection.prepareStatement("UPDATE upload_template SET group_name = ? WHERE group_name = ?").use { stmt ->
+            stmt.setString(1, newGroup)
+            stmt.setString(2, group)
+            stmt.executeUpdate()
         }
     }
 }

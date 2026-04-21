@@ -39,6 +39,14 @@ import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import java.io.File
 import java.util.Base64
 
+internal object AddItemDialogLayoutDefaults {
+    fun mainFormConstraints(): GridBagConstraints = GridBagConstraints().apply {
+        fill = GridBagConstraints.HORIZONTAL
+        anchor = GridBagConstraints.WEST
+        insets = JBUI.insets(3)
+    }
+}
+
 class AddItemDialog(
     private val project: Project,
     private val existingConfig: SshConfig? = null,
@@ -117,11 +125,7 @@ class AddItemDialog(
 
     override fun createCenterPanel(): JComponent {
         mainPanel = JPanel(GridBagLayout())
-        val gbc = GridBagConstraints().apply {
-            fill = GridBagConstraints.HORIZONTAL
-            anchor = GridBagConstraints.NORTHWEST
-            insets = JBUI.insets(3)
-        }
+        val gbc = AddItemDialogLayoutDefaults.mainFormConstraints()
 
         // 基本信息
         var row = 0
