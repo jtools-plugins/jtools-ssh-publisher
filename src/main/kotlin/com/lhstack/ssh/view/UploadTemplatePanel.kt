@@ -1,5 +1,8 @@
 package com.lhstack.ssh.view
 
+import com.intellij.notification.Notification
+import com.intellij.notification.NotificationType
+import com.intellij.notification.Notifications
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.fileChooser.FileChooser
@@ -11,10 +14,12 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.ColoredTreeCellRenderer
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.ToolbarDecorator
+import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextField
@@ -29,11 +34,13 @@ import com.lhstack.ssh.model.TransferTask
 import com.lhstack.ssh.model.UploadTemplate
 import com.lhstack.ssh.service.SshConfigService
 import com.lhstack.ssh.service.TransferTaskManager
+import com.lhstack.ssh.util.AnActionFactory
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
 import java.awt.Insets
+import java.awt.Point
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.io.File
@@ -56,7 +63,7 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
         initTree()
         refreshTree()
     }
-    
+
     /**
      * 显示新建模板对话框
      */
@@ -70,6 +77,7 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
                 override fun actionPerformed(e: AnActionEvent) {
                     UploadTemplateDialog(project, null) { refreshTree() }.show()
                 }
+
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
             add(object : AnAction({ "刷新" }, PluginIcons.Refresh) {
@@ -81,11 +89,14 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
                 override fun actionPerformed(e: AnActionEvent) {
                     executeSelectedTemplates()
                 }
+
                 override fun update(e: AnActionEvent) {
                     val selectedTemplates = getSelectedTemplates()
                     e.presentation.isEnabled = selectedTemplates.isNotEmpty()
-                    e.presentation.text = if (selectedTemplates.size > 1) "执行选中 (${selectedTemplates.size})" else "执行选中"
+                    e.presentation.text =
+                        if (selectedTemplates.size > 1) "执行选中 (${selectedTemplates.size})" else "执行选中"
                 }
+
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
         }
@@ -119,6 +130,7 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
                         val serverName = sshConfig?.name ?: "未知服务器"
                         append("  → $serverName", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                     }
+
                     is String -> {
                         icon = PluginIcons.Folder
                         append(userObject, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
@@ -159,7 +171,7 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
         val node = tree.lastSelectedPathComponent as? DefaultMutableTreeNode
         return node?.userObject as? UploadTemplate
     }
-    
+
     /**
      * 获取所有选中的模板（支持多选）
      */
@@ -180,7 +192,7 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
         }
         return templates.distinctBy { it.id }
     }
-    
+
     /**
      * 批量执行选中的模板
      */
@@ -190,23 +202,23 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
             Messages.showWarningDialog(project, "请选择要执行的模板", "提示")
             return
         }
-        
+
         var successCount = 0
         val errors = mutableListOf<String>()
-        
+
         templates.forEach { template ->
             val file = File(template.localPath)
             if (!file.exists()) {
                 errors.add("${template.name}: 本地文件不存在")
                 return@forEach
             }
-            
+
             val sshConfig = SshConfigService.getConfigById(template.sshConfigId)
             if (sshConfig == null) {
                 errors.add("${template.name}: 目标服务器配置不存在")
                 return@forEach
             }
-            
+
             // 获取选中的脚本
             val preScripts = template.preScriptIds.mapNotNull { id ->
                 SshConfigService.getScriptsByConfigId(template.sshConfigId).find { it.id == id }
@@ -214,7 +226,7 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
             val postScripts = template.postScriptIds.mapNotNull { id ->
                 SshConfigService.getScriptsByConfigId(template.sshConfigId).find { it.id == id }
             }
-            
+
             val remoteFileName = template.remoteFileName.ifEmpty { file.name }
             val task = TransferTask(
                 type = TransferTask.TransferType.UPLOAD,
@@ -227,11 +239,11 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
                 tempPreScript = template.preScript,
                 tempPostScript = template.postScript
             )
-            
+
             TransferTaskManager.addTask(task)
             successCount++
         }
-        
+
         if (errors.isEmpty()) {
             Messages.showInfoMessage(project, "已添加 $successCount 个任务到传输队列", "执行成功")
         } else {
@@ -246,32 +258,43 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
 
     private fun showTemplateContextMenu(e: MouseEvent, template: UploadTemplate) {
         val selectedTemplates = getSelectedTemplates()
-        JPopupMenu().apply {
+        JBPopupFactory.getInstance().createActionGroupPopup("操作", DefaultActionGroup().apply {
             if (selectedTemplates.size > 1) {
-                add(createMenuItem("批量执行 (${selectedTemplates.size})", PluginIcons.Execute) {
-                    executeSelectedTemplates() 
+                add(AnActionFactory.create("批量执行 (${selectedTemplates.size})", PluginIcons.Execute) {
+                    executeSelectedTemplates()
                 })
-                addSeparator()
+                this.addSeparator()
             } else {
-                add(createMenuItem("执行", PluginIcons.Execute) { executeTemplate(template) })
-                addSeparator()
+                add(AnActionFactory.create("执行", PluginIcons.Execute) { executeTemplate(template) })
+                this.addSeparator()
             }
-            add(createMenuItem("编辑", PluginIcons.Edit) { editTemplate(template) })
-            add(createMenuItem("复制", PluginIcons.Copy) { copyTemplate(template) })
-            add(createMenuItem("删除", PluginIcons.Delete) { deleteTemplate(template) })
-        }.show(e.component, e.x, e.y)
+            add(AnActionFactory.create("编辑", PluginIcons.Edit) { editTemplate(template) })
+            add(AnActionFactory.create("复制", PluginIcons.Copy) { copyTemplate(template) })
+            add(AnActionFactory.create("删除", PluginIcons.Delete) { deleteTemplate(template) })
+        }, DataContext.EMPTY_CONTEXT, JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false)
+            .show(RelativePoint(e.component, Point(e.x, e.y)))
     }
 
     private fun showGroupContextMenu(e: MouseEvent, group: String) {
-        JPopupMenu().apply {
-            add(createMenuItem("新建模板到此分组", PluginIcons.Add) {
+        JBPopupFactory.getInstance().createActionGroupPopup("操作", DefaultActionGroup().apply {
+            add(AnActionFactory.create("新建模板到此分组", PluginIcons.Add) {
                 UploadTemplateDialog(project, null, group) { refreshTree() }.show()
             })
-        }.show(e.component, e.x, e.y)
-    }
 
-    private fun createMenuItem(text: String, icon: Icon, action: () -> Unit): JMenuItem {
-        return JMenuItem(text, icon).apply { addActionListener { action() } }
+            this.add(AnActionFactory.create("重命名此分组", PluginIcons.Rename){
+                val newGroup =
+                    Messages.showInputDialog(project, "请输入新的分组名称", "重命名", PluginIcons.Rename)
+                if(newGroup?.isBlank() == true) {
+                    Notifications.Bus.notify(Notification("JToolsSshPublisher","新的分组名称不能为空", NotificationType.ERROR))
+                    return@create;
+                }
+                newGroup?.let {
+                    SshConfigService.renameUploadTempGroup(group,it)
+                    refreshTree()
+                }
+            })
+        }, DataContext.EMPTY_CONTEXT, JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false)
+            .show(RelativePoint(e.component, Point(e.x, e.y)))
     }
 
     private fun executeTemplate(template: UploadTemplate) {
@@ -372,7 +395,7 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
             }
         }
     }
-    
+
     /**
      * 展开所有节点
      */
@@ -385,7 +408,7 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
             }
         }
     }
-    
+
     /**
      * 收起所有节点
      */
@@ -417,17 +440,17 @@ class UploadTemplateDialog(
     private val serverCombo = ComboBox<SshConfig>()
     private val remotePathField = JBTextField(template?.remotePath ?: "/tmp")
     private val remoteFileNameField = JBTextField(template?.remoteFileName ?: "")
-    
+
     // 脚本选择表格
     private val preScriptsModel = TemplateScriptTableModel()
     private val postScriptsModel = TemplateScriptTableModel()
     private val preScriptsTable = JBTable(preScriptsModel)
     private val postScriptsTable = JBTable(postScriptsModel)
-    
+
     // 临时脚本编辑器
     private lateinit var tempPreScriptEditor: MultiLanguageTextField
     private lateinit var tempPostScriptEditor: MultiLanguageTextField
-    
+
     private val shellFileType: LanguageFileType by lazy {
         FileTypeManager.getInstance().getFileTypeByExtension("sh") as? LanguageFileType
             ?: PlainTextFileType.INSTANCE
@@ -443,7 +466,7 @@ class UploadTemplateDialog(
     private fun loadServers() {
         val configs = SshConfigService.getConfigs()
         configs.forEach { serverCombo.addItem(it) }
-        
+
         serverCombo.renderer = ListCellRenderer { _, value, _, _, _ ->
             JLabel(if (value != null) "${value.name} (${value.host})" else "").apply {
                 border = BorderFactory.createEmptyBorder(2, 5, 2, 5)
@@ -462,20 +485,20 @@ class UploadTemplateDialog(
         } else if (configs.isNotEmpty()) {
             serverCombo.selectedIndex = 0
         }
-        
+
         updateScriptsList()
     }
-    
+
     private fun updateScriptsList() {
         val selectedConfig = serverCombo.selectedItem as? SshConfig ?: return
-        
+
         preScriptsModel.clear()
         postScriptsModel.clear()
-        
+
         // 编辑模式下恢复之前选中的脚本
         val selectedPreIds = template?.preScriptIds ?: emptyList()
         val selectedPostIds = template?.postScriptIds ?: emptyList()
-        
+
         SshConfigService.getPreScripts(selectedConfig.id).forEach {
             preScriptsModel.addScript(it, it.id in selectedPreIds)
         }
@@ -486,11 +509,13 @@ class UploadTemplateDialog(
 
     override fun createCenterPanel(): JComponent {
         // 创建Shell编辑器
-        tempPreScriptEditor = MultiLanguageTextField(shellFileType, project, template?.preScript ?: "", isLineNumbersShown = true)
-        tempPostScriptEditor = MultiLanguageTextField(shellFileType, project, template?.postScript ?: "", isLineNumbersShown = true)
+        tempPreScriptEditor =
+            MultiLanguageTextField(shellFileType, project, template?.preScript ?: "", isLineNumbersShown = true)
+        tempPostScriptEditor =
+            MultiLanguageTextField(shellFileType, project, template?.postScript ?: "", isLineNumbersShown = true)
         Disposer.register(disposable, tempPreScriptEditor)
         Disposer.register(disposable, tempPostScriptEditor)
-        
+
         val panel = JPanel(GridBagLayout())
         val gbc = GridBagConstraints().apply {
             insets = Insets(4, 4, 4, 4)
@@ -570,12 +595,12 @@ class UploadTemplateDialog(
         panel.preferredSize = Dimension(700, 550)
         return panel
     }
-    
+
     private fun createScriptPanel(table: JBTable, editor: MultiLanguageTextField, label: String): JComponent {
         table.setShowGrid(false)
         table.tableHeader.reorderingAllowed = false
         table.rowHeight = 24
-        
+
         table.columnModel.getColumn(0).apply {
             preferredWidth = 40
             maxWidth = 40
@@ -645,7 +670,7 @@ class UploadTemplateDialog(
         super.doOKAction()
         onSaved()
     }
-    
+
     override fun dispose() {
         super.dispose()
     }
@@ -691,7 +716,7 @@ class TemplateScriptTableModel : AbstractTableModel() {
         items.add(ScriptItem(script, selected))
         fireTableRowsInserted(items.size - 1, items.size - 1)
     }
-    
+
     fun clear() {
         val size = items.size
         items.clear()
@@ -701,6 +726,6 @@ class TemplateScriptTableModel : AbstractTableModel() {
     }
 
     fun getSelectedScriptIds(): List<String> = items.filter { it.selected }.map { it.script.id }
-    
+
     fun getSelectedScripts(): List<ScriptConfig> = items.filter { it.selected }.map { it.script }
 }

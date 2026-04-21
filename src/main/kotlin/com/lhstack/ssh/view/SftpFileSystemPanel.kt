@@ -7,9 +7,11 @@ import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.SimpleToolWindowPanel
+import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.ui.ColoredTreeCellRenderer
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.TreeSpeedSearch
+import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextField
@@ -21,16 +23,10 @@ import com.lhstack.ssh.model.TransferTask
 import com.lhstack.ssh.service.RemoteFileEditorService
 import com.lhstack.ssh.service.SshConnectionManager
 import com.lhstack.ssh.service.TransferTaskManager
-import com.lhstack.ssh.util.ConfirmationContent
-import com.lhstack.ssh.util.RemotePathItem
-import com.lhstack.ssh.util.RemoteRiskOperationUtils
-import com.lhstack.ssh.util.SftpTreeOperationUtils
-import com.lhstack.ssh.util.UploadPlan
-import com.lhstack.ssh.util.UploadPlanItem
-import com.lhstack.ssh.util.UploadPathUtils
-import com.lhstack.ssh.util.LatestRequestGuard
+import com.lhstack.ssh.util.*
 import org.apache.sshd.sftp.client.SftpClient
 import java.awt.BorderLayout
+import java.awt.Point
 import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.Transferable
 import java.awt.dnd.DnDConstants
@@ -44,11 +40,10 @@ import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import javax.swing.*
-import javax.swing.TransferHandler.TransferSupport
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeModel
-import javax.swing.tree.TreeSelectionModel
 import javax.swing.tree.TreePath
+import javax.swing.tree.TreeSelectionModel
 
 /**
  * SFTP 文件系统面板
@@ -928,60 +923,61 @@ class SftpFileSystemPanel(
         val selectedNodes = getEffectiveSelectedFileNodes()
         val primaryNode = getPrimarySelectedFileNode()
         val isBatch = selectedNodes.size > 1
-
-        JPopupMenu().apply {
+        JBPopupFactory.getInstance().createActionGroupPopup("操作", DefaultActionGroup().apply {
             if (!isBatch && primaryNode?.isDirectory == true) {
-                add(JMenuItem("打开", PluginIcons.Open).apply {
-                    addActionListener { navigateTo(primaryNode.path) }
+
+                add(AnActionFactory.create("打开", PluginIcons.Open) {
+                    navigateTo(primaryNode.path)
                 })
-                add(JMenuItem("新建...", PluginIcons.NewFile).apply {
-                    addActionListener { showCreateEntryDialog(primaryNode.path) }
+                add(AnActionFactory.create("新建...", PluginIcons.NewFile){
+                    showCreateEntryDialog(primaryNode.path)
                 })
-                add(JMenuItem("批量创建...", PluginIcons.NewFolder).apply {
-                    addActionListener { showBatchCreateDialog(primaryNode.path) }
-                })
-                addSeparator()
-                add(JMenuItem("上传到此目录", PluginIcons.Upload).apply {
-                    addActionListener { uploadToDirectory(primaryNode.path) }
-                })
-                add(JMenuItem("批量上传到此目录", PluginIcons.BatchUpload).apply {
-                    addActionListener { batchUploadFiles(primaryNode.path) }
+                add(AnActionFactory.create("批量创建...", PluginIcons.NewFolder){
+                    showBatchCreateDialog(primaryNode.path)
                 })
                 addSeparator()
+                add(AnActionFactory.create("上传到此目录", PluginIcons.Upload) {
+                     uploadToDirectory(primaryNode.path)
+                })
+                add(AnActionFactory.create("批量上传到此目录", PluginIcons.BatchUpload) {
+                     batchUploadFiles(primaryNode.path)
+                })
+                this.addSeparator()
             }
             if (!isBatch && primaryNode != null && !primaryNode.isDirectory) {
-                add(JMenuItem("编辑", PluginIcons.Edit).apply {
-                    addActionListener { openFileInEditor(primaryNode) }
+                add(AnActionFactory.create("编辑", PluginIcons.Edit) {
+                     openFileInEditor(primaryNode)
                 })
-                add(JMenuItem("下载", PluginIcons.Download).apply {
-                    addActionListener { downloadSelected() }
+                add(AnActionFactory.create("下载", PluginIcons.Download) {
+                    downloadSelected()
                 })
             }
             if (!isBatch && primaryNode != null) {
-                add(JMenuItem("重命名", PluginIcons.Rename).apply {
-                    addActionListener { renameFile(primaryNode) }
+                add(AnActionFactory.create("重命名", PluginIcons.Rename) {
+                     renameFile(primaryNode)
                 })
-                addSeparator()
-                add(JMenuItem("复制路径", PluginIcons.Copy).apply {
-                    addActionListener {
+                this.addSeparator()
+                add(AnActionFactory.create("复制路径", PluginIcons.Copy) {
+
                         java.awt.Toolkit.getDefaultToolkit().systemClipboard
                             .setContents(java.awt.datatransfer.StringSelection(primaryNode.path), null)
                         statusLabel.text = "已复制路径"
-                    }
+
                 })
-                add(JMenuItem("属性", PluginIcons.Properties).apply {
-                    addActionListener { showProperties(primaryNode) }
+                add(AnActionFactory.create("属性", PluginIcons.Properties) {
+                     showProperties(primaryNode)
                 })
             }
             if (selectedNodes.isNotEmpty()) {
                 if (componentCount > 0) {
-                    addSeparator()
+                    this.addSeparator()
                 }
-                add(JMenuItem(if (isBatch) "批量删除" else "删除", if (isBatch) PluginIcons.BatchDelete else PluginIcons.Delete).apply {
-                    addActionListener { deleteSelected() }
+                add(AnActionFactory.create(if (isBatch) "批量删除" else "删除", if (isBatch) PluginIcons.BatchDelete else PluginIcons.Delete) {
+                    deleteSelected()
                 })
             }
-        }.show(e.component, e.x, e.y)
+        }, DataContext.EMPTY_CONTEXT, JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,false)
+            .show(RelativePoint(e.component, Point(e.x,e.y)))
     }
 
     private fun uploadToDirectory(targetDir: String) {

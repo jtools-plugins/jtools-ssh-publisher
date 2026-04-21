@@ -11,14 +11,14 @@ import com.jediterm.terminal.TtyConnector
 import com.jediterm.terminal.model.StyleState
 import com.jediterm.terminal.model.TerminalTextBuffer
 import com.jediterm.terminal.ui.JediTermWidget
-import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.PluginIcons
+import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.service.SshConnectionManager
 import com.lhstack.ssh.util.SafeInputMethodRequests
 import com.lhstack.ssh.util.TerminalIoUtils
 import org.apache.sshd.client.channel.ChannelShell
 import org.apache.sshd.client.channel.ClientChannelEvent
-
+import org.jetbrains.plugins.terminal.JBTerminalSystemSettingsProvider
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
@@ -259,7 +259,7 @@ class SshTerminalPanel(
     }
 
     private fun createTerminalWidget(connector: TtyConnector): JediTermWidget {
-        return object : JBTerminalWidget(project, SshTerminalSettingsProvider(), parentDisposable) {
+        return object : JBTerminalWidget(project, JBTerminalSystemSettingsProvider(), parentDisposable) {
             override fun createTerminalPanel(
                 settingsProvider: com.jediterm.terminal.ui.settings.SettingsProvider,
                 styleState: StyleState,
