@@ -50,5 +50,5 @@ class PluginImpl : IPlugin {
 
     override fun pluginDesc(): String = "IntelliJ IDEA SSH 客户端插件，集成终端、SFTP 文件浏览器、批量上传、上传模板和传输管理，支持跳板链、远程文件同步、系统监控，以及拖拽上传/移动、导入覆盖、删除等高风险操作确认。"
 
-    override fun pluginVersion(): String = "1.1.3"
+    override fun pluginVersion(): String = "1.1.4"
 }
