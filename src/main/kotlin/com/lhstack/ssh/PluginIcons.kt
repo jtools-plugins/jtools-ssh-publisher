@@ -98,6 +98,12 @@ object PluginIcons {
     val Close: Icon = IconLoader.getIcon("/closeIcon.svg", PluginIcons::class.java)
 
     @JvmField
+    val CloseOthers: Icon = IconLoader.getIcon("/closeOthersIcon.svg", PluginIcons::class.java)
+
+    @JvmField
+    val CloseAll: Icon = IconLoader.getIcon("/closeAllIcon.svg", PluginIcons::class.java)
+
+    @JvmField
     val Detail: Icon = IconLoader.getIcon("/detailIcon.svg", PluginIcons::class.java)
 
     @JvmField

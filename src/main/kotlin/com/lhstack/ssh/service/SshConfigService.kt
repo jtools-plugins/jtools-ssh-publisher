@@ -1,5 +1,6 @@
 package com.lhstack.ssh.service
 
+import com.intellij.execution.ui.utils.Group
 import com.lhstack.ssh.model.ScriptConfig
 import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.model.UploadTemplate
@@ -101,6 +102,7 @@ object SshConfigService {
         }
     }
 
+    @Synchronized
     fun getConfigs(): List<SshConfig> {
         val list = mutableListOf<SshConfig>()
         connection.createStatement().use { stmt ->
@@ -129,6 +131,7 @@ object SshConfigService {
         return list
     }
 
+    @Synchronized
     fun addConfig(config: SshConfig) {
         connection.prepareStatement(
             """
@@ -154,6 +157,7 @@ object SshConfigService {
         }
     }
 
+    @Synchronized
     fun updateConfig(config: SshConfig) {
         connection.prepareStatement(
             """
@@ -179,6 +183,7 @@ object SshConfigService {
         }
     }
 
+    @Synchronized
     fun removeConfig(id: String) {
         // 先删除关联的脚本
         connection.prepareStatement("DELETE FROM script_config WHERE ssh_config_id=?").use { stmt ->
@@ -191,6 +196,7 @@ object SshConfigService {
         }
     }
 
+    @Synchronized
     fun getConfigById(id: String): SshConfig? {
         connection.prepareStatement("SELECT * FROM ssh_config WHERE id=?").use { stmt ->
             stmt.setString(1, id)
@@ -224,6 +230,7 @@ object SshConfigService {
 
     // ========== 脚本管理 ==========
 
+    @Synchronized
     fun getScriptsByConfigId(sshConfigId: String): List<ScriptConfig> {
         val list = mutableListOf<ScriptConfig>()
         connection.prepareStatement("SELECT * FROM script_config WHERE ssh_config_id=? ORDER BY script_type, name")
@@ -255,6 +262,7 @@ object SshConfigService {
         return getScriptsByConfigId(sshConfigId).filter { it.scriptType == ScriptConfig.ScriptType.POST }
     }
 
+    @Synchronized
     fun addScript(script: ScriptConfig) {
         connection.prepareStatement(
             """
@@ -272,6 +280,7 @@ object SshConfigService {
         }
     }
 
+    @Synchronized
     fun updateScript(script: ScriptConfig) {
         connection.prepareStatement(
             """
@@ -288,6 +297,7 @@ object SshConfigService {
         }
     }
 
+    @Synchronized
     fun removeScript(id: String) {
         connection.prepareStatement("DELETE FROM script_config WHERE id=?").use { stmt ->
             stmt.setString(1, id)
@@ -297,6 +307,7 @@ object SshConfigService {
 
     // ========== 上传模板管理 ==========
 
+    @Synchronized
     fun getUploadTemplates(): List<UploadTemplate> {
         val list = mutableListOf<UploadTemplate>()
         connection.createStatement().use { stmt ->
@@ -328,6 +339,7 @@ object SshConfigService {
         return getUploadTemplates().groupBy { it.group.ifEmpty { "默认" } }
     }
 
+    @Synchronized
     fun getUploadTemplateById(id: String): UploadTemplate? {
         connection.prepareStatement("SELECT * FROM upload_template WHERE id=?").use { stmt ->
             stmt.setString(1, id)
@@ -353,6 +365,7 @@ object SshConfigService {
         return null
     }
 
+    @Synchronized
     fun addUploadTemplate(template: UploadTemplate) {
         connection.prepareStatement(
             """
@@ -377,6 +390,7 @@ object SshConfigService {
         }
     }
 
+    @Synchronized
     fun updateUploadTemplate(template: UploadTemplate) {
         connection.prepareStatement(
             """
@@ -400,6 +414,7 @@ object SshConfigService {
         }
     }
 
+    @Synchronized
     fun removeUploadTemplate(id: String) {
         connection.prepareStatement("DELETE FROM upload_template WHERE id=?").use { stmt ->
             stmt.setString(1, id)
@@ -414,6 +429,7 @@ object SshConfigService {
         }
     }
 
+    @Synchronized
     fun renameGroup(group: String, newGroup: String) {
         connection.prepareStatement("UPDATE ssh_config SET group_name = ? WHERE group_name = ?").use { stmt ->
             stmt.setString(1, newGroup)
@@ -422,6 +438,7 @@ object SshConfigService {
         }
     }
 
+    @Synchronized
     fun renameUploadTempGroup(group: String, newGroup: String) {
         connection.prepareStatement("UPDATE upload_template SET group_name = ? WHERE group_name = ?").use { stmt ->
             stmt.setString(1, newGroup)

@@ -63,6 +63,8 @@ class SshTerminalPanel(
 
     init {
         Disposer.register(parentDisposable, this)
+        // 重连按钮监听器只注册一次，避免每次断线重复挂载导致点击触发多次重连
+        reconnectBtn.addActionListener { reconnect() }
         showConnecting()
         connect()
     }
@@ -152,8 +154,6 @@ class SshTerminalPanel(
             val disconnectPanel = JPanel(FlowLayout(FlowLayout.CENTER, 10, 5)).apply {
                 background = java.awt.Color(255, 200, 200)
                 add(JLabel("连接已断开").apply { icon = PluginIcons.Warning })
-                
-                reconnectBtn.addActionListener { reconnect() }
                 add(reconnectBtn)
             }
             

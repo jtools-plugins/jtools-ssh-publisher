@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.lhstack.ssh-publisher</id>
     <name>JTools SSH Publisher</name>
-    <version>1.2.4</version>
+    <version>1.2.5</version>
     <vendor email="lhstack@foxmail.com" url="https://github.com/lhstack">lhstack</vendor>
 
     <description><![CDATA[
@@ -121,6 +121,21 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>1.2.5</b>
+    <ul>
+        <li>优化：Tab 拖拽体验重构，拖出即从源分屏移除并跟随鼠标显示半透明幽灵标签，落点显示高亮占位标签，同容器排序与跨容器移动统一逻辑</li>
+        <li>修复：Tab 拖拽排序时因反复重算落点导致的闪烁问题</li>
+        <li>优化：Tab 右键菜单切换为 IDEA 原生动作弹窗，支持图标与操作搜索</li>
+        <li>优化：全量重绘工具栏、文件类型、状态、分屏等图标，统一为 IDEA 风格线性图标并适配明暗主题</li>
+        <li>新增：SSH 主机密钥校验（known_hosts + 首次指纹确认 + 指纹变化告警），防止中间人攻击</li>
+        <li>新增：SSH 配置与跳板机的密码、私钥密码支持「显示原文」，免去导出核对</li>
+        <li>优化：命令执行改为并发读取 stdout/stderr，避免管道阻塞与输出截断</li>
+        <li>优化：SFTP 客户端与配置存储的并发访问串行化，避免多线程共享导致的错乱</li>
+        <li>修复：终端断线重连按钮监听重复注册导致的多次触发</li>
+        <li>修复：传输任务停止时可能覆盖已完成状态的问题</li>
+        <li>修复：shadowJar 打包因 MANIFEST.MF 输入快照失败的问题</li>
+    </ul>
+
     <b>1.2.4</b>
     <ul>
         <li>优化：SSH 配置、上传模板、文件系统右键菜单统一切换为 IDEA 原生动作弹窗，支持图标展示与操作搜索</li>
