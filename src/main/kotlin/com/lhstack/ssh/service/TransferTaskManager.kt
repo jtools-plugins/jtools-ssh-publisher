@@ -51,6 +51,13 @@ object TransferTaskManager {
     }
 
     fun stopTask(task: TransferTask) {
+        // 已到终态的任务不再改动，避免把已完成/失败的任务错误标记为“已停止”
+        if (task.status == TransferTask.TaskStatus.SUCCESS ||
+            task.status == TransferTask.TaskStatus.FAILED ||
+            task.status == TransferTask.TaskStatus.STOPPED
+        ) {
+            return
+        }
         // 先标记任务状态为停止，让执行线程检测到后自行清理
         task.status = TransferTask.TaskStatus.STOPPED
         task.message = "正在停止..."

@@ -62,6 +62,9 @@ class AddItemDialog(
     private val passwordField = JBPasswordField().apply { text = existingConfig?.password ?: "" }
     private val privateKeyArea = JBTextArea(existingConfig?.privateKey ?: "", 4, 30)
     private val passphraseField = JBPasswordField().apply { text = existingConfig?.passphrase ?: "" }
+    // 数据仅存本地、不经网络传输，允许明文查看密码，省去导出核对的麻烦
+    private val showPasswordCheckbox = createRevealCheckbox(passwordField)
+    private val showPassphraseCheckbox = createRevealCheckbox(passphraseField)
     private val remoteDirField = JBTextField(existingConfig?.remoteDir ?: "/tmp")
     private val useLocalKeyCheckbox = JCheckBox("使用本地密钥 (~/.ssh/id_rsa)").apply {
         isSelected = existingConfig?.useLocalKey ?: false
@@ -246,6 +249,21 @@ class AddItemDialog(
             add(JBLabel("密码:"), g)
             g.gridx = 1; g.weightx = 1.0
             add(passwordField, g)
+            g.gridx = 2; g.weightx = 0.0
+            add(createRevealCheckbox(passwordField), g)
+        }
+    }
+
+    /**
+     * 创建“显示原文”复选框：勾选后明文显示密码，取消则恢复掩码。
+     * 数据仅存本地，供用户核对已保存的密码，避免导出查看。
+     */
+    private fun createRevealCheckbox(field: JBPasswordField): JCheckBox {
+        val defaultEchoChar = field.echoChar
+        return JCheckBox("显示原文").apply {
+            addActionListener {
+                field.echoChar = if (isSelected) 0.toChar() else defaultEchoChar
+            }
         }
     }
     
@@ -291,6 +309,8 @@ class AddItemDialog(
             add(JBLabel("私钥密码:"), g)
             g.gridx = 1; g.weightx = 1.0
             add(passphraseField, g)
+            g.gridx = 2; g.weightx = 0.0
+            add(createRevealCheckbox(passphraseField), g)
             
             // 监听使用本地密钥选项变化
             useLocalKeyCheckbox.addActionListener {
@@ -852,6 +872,19 @@ private class JumpHostEditDialog(
             gbc.gridx = 1
             gbc.weightx = 1.0
             add(passwordField, gbc)
+            gbc.gridx = 2
+            gbc.weightx = 0.0
+            add(createRevealCheckbox(passwordField), gbc)
+        }
+    }
+
+    // 数据仅存本地、不经网络传输，允许明文查看密码，省去导出核对的麻烦
+    private fun createRevealCheckbox(field: JBPasswordField): JCheckBox {
+        val defaultEchoChar = field.echoChar
+        return JCheckBox("显示原文").apply {
+            addActionListener {
+                field.echoChar = if (isSelected) 0.toChar() else defaultEchoChar
+            }
         }
     }
 
@@ -883,6 +916,9 @@ private class JumpHostEditDialog(
             gbc.gridx = 1
             gbc.weightx = 1.0
             add(passphraseField, gbc)
+            gbc.gridx = 2
+            gbc.weightx = 0.0
+            add(createRevealCheckbox(passphraseField), gbc)
         }
     }
 

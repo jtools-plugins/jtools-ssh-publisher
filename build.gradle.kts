@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "com.lhstack"
-version = "1.1.4"
+version = "1.1.5"
 
 
 repositories {
@@ -55,6 +55,11 @@ tasks {
     }
 
     withType<ShadowJar> {
+        // IntelliJ Platform 插件生成的 generateManifest 任务会把 MANIFEST.MF 接入 jar 的 rootSpec，
+        // shadowJar 追踪输入快照时该文件可能尚未生成，触发 NoSuchFileException。
+        // 先显式依赖 generateManifest 保证文件存在，再关闭状态追踪规避不可读输入的快照校验。
+        dependsOn("generateManifest")
+        doNotTrackState("shadowJar 需读取 generateManifest 产出的 MANIFEST.MF，其路径由平台插件动态管理")
         transform(com.github.jengelman.gradle.plugins.shadow.transformers.ServiceFileTransformer::class.java)
         transform(com.github.jengelman.gradle.plugins.shadow.transformers.XmlAppendingTransformer::class.java)
         transform(com.github.jengelman.gradle.plugins.shadow.transformers.XmlAppendingTransformer::class.java)

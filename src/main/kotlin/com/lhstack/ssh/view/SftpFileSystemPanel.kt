@@ -54,9 +54,10 @@ class SftpFileSystemPanel(
 ) : SimpleToolWindowPanel(true, true), Disposable {
 
     private val connectionManager = SshConnectionManager()
-    private val executor = Executors.newFixedThreadPool(2)
+    // 单线程串行执行：同一 SftpClient 通道不支持并发请求，所有 SFTP 操作必须串行
+    private val executor = Executors.newSingleThreadExecutor()
     private var remoteFileEditorService: RemoteFileEditorService =
-        RemoteFileEditorService(project, connectionManager, config)
+        RemoteFileEditorService(project, connectionManager, config, executor)
 
     private val rootNode = DefaultMutableTreeNode(FileNode("/", true, 0, 0, ""))
     private val treeModel = DefaultTreeModel(rootNode)

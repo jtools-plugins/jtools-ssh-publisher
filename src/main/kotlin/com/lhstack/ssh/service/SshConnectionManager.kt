@@ -19,7 +19,10 @@ import java.util.concurrent.TimeUnit
  */
 class SshConnectionManager {
 
+    // 主机密钥校验器：基于本机 known_hosts 记录 + 首次指纹确认，防止中间人攻击
+    private val hostKeyVerifier = HostKeyVerifier()
     private val client: SshClient = SshClient.setUpDefaultClient().apply {
+        serverKeyVerifier = hostKeyVerifier
         start()
     }
     private var session: ClientSession? = null
@@ -62,6 +65,8 @@ class SshConnectionManager {
             chain.forEachIndexed { index, endpoint ->
                 val hopLabel = "第 ${index + 1}/${chain.size} 跳"
                 validateEndpoint(endpoint, hopLabel)
+                // 用真实目标 host:port 作为指纹校验标识，避免中间跳走本地转发端口时标识不稳定
+                hostKeyVerifier.expect(endpoint.host, endpoint.port, hopLabel)
                 println("[SSH] $hopLabel 正在连接 ${endpoint.username}@${endpoint.host}:${endpoint.port}")
 
                 val currentSession = connectSession(endpoint, connectHost, connectPort, hopLabel)
@@ -232,21 +237,40 @@ class SshConnectionManager {
     
     /**
      * 执行命令
+     *
+     * stdout/stderr 使用独立线程并发读取，避免某一路输出填满管道缓冲区后与另一路互相阻塞，
+     * 读取完成后再等待通道关闭，确保拿到完整输出。
      */
     fun executeCommand(command: String): String {
         val currentSession = session ?: throw IllegalStateException("未连接")
-        
+
         return currentSession.createExecChannel(command).use { channel ->
             channel.open().verify(30, TimeUnit.SECONDS)
-            val output = channel.invertedOut.bufferedReader().readText()
-            val error = channel.invertedErr.bufferedReader().readText()
+
+            var output = ""
+            var error = ""
+            val outReader = Thread { output = channel.invertedOut.bufferedReader().readText() }
+            val errReader = Thread { error = channel.invertedErr.bufferedReader().readText() }
+            outReader.start()
+            errReader.start()
+            outReader.join()
+            errReader.join()
+
+            channel.waitFor(
+                java.util.EnumSet.of(org.apache.sshd.client.channel.ClientChannelEvent.CLOSED),
+                TimeUnit.SECONDS.toMillis(30)
+            )
             if (error.isNotEmpty()) "$output\n$error" else output
         }
     }
-    
+
     /**
      * 获取SFTP客户端
+     *
+     * 加锁保证同一连接只创建一个 SftpClient，避免并发首次创建时产生多个通道。
+     * 注意：SftpClient 单通道本身不支持并发请求，调用方需自行串行化对同一实例的使用。
      */
+    @Synchronized
     fun getSftpClient(): SftpClient {
         val currentSession = session ?: throw IllegalStateException("未连接")
         if (sftpClient == null) {

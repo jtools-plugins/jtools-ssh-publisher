@@ -1,7 +1,7 @@
 package com.lhstack.ssh.service
 
-import com.intellij.AppTopics
 import com.intellij.openapi.Disposable
+import com.intellij.AppTopics
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -26,10 +26,13 @@ import java.util.concurrent.Executors
 class RemoteFileEditorService(
     private val project: Project,
     private val connectionManager: SshConnectionManager,
-    private val config: SshConfig
+    private val config: SshConfig,
+    sharedExecutor: java.util.concurrent.ExecutorService? = null
 ) : Disposable {
 
-    private val executor = Executors.newSingleThreadExecutor()
+    // 允许复用调用方的串行执行器：与文件系统面板共用同一个线程，避免并发使用同一 SftpClient 通道
+    private val ownsExecutor = sharedExecutor == null
+    private val executor = sharedExecutor ?: Executors.newSingleThreadExecutor()
     private val openedFiles = ConcurrentHashMap<String, RemoteFileInfo>()  // localPath -> RemoteFileInfo
     private var messageBusConnection: MessageBusConnection? = null
 
@@ -57,15 +60,20 @@ class RemoteFileEditorService(
         // 监听文件关闭事件，清理记录
         messageBusConnection?.subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, object : FileEditorManagerListener {
             override fun fileClosed(source: FileEditorManager, file: VirtualFile) {
-                // VirtualFile.path 可能与 File.absolutePath 格式不同，需要统一处理
-                val normalizedPath = file.path.replace("/", File.separator)
-                openedFiles.remove(normalizedPath)
-                openedFiles.remove(file.path)
+                // 一条记录同时用 VirtualFile.path 和 localFile.absolutePath 两个 key 存储，
+                // 关闭时按记录反查并移除所有指向它的 key，避免残留导致的内存泄漏
+                val closed = openedFiles[file.path]
+                    ?: openedFiles[file.path.replace("/", File.separator)]
+                if (closed != null) {
+                    openedFiles.entries.removeIf { it.value === closed }
+                }
                 println("[SFTP] 文件关闭: ${file.path}")
             }
         })
         
-        // 监听文件保存事件，同步到远程
+        // 监听文件保存事件，同步到远程。
+        // 注：AppTopics.FILE_DOCUMENT_SYNC 在当前 since-build(223) 仍是可用 API，
+        // 新版本虽标记弃用，但为保持兼容不替换。
         messageBusConnection?.subscribe(AppTopics.FILE_DOCUMENT_SYNC, object : FileDocumentManagerListener {
             override fun beforeDocumentSaving(document: Document) {
                 val file = FileDocumentManager.getInstance().getFile(document) ?: return
@@ -331,7 +339,7 @@ class RemoteFileEditorService(
     override fun dispose() {
         // 关闭所有打开的文件
         closeAllOpenedFiles()
-        executor.shutdownNow()
+        if (ownsExecutor) executor.shutdownNow()
         messageBusConnection?.disconnect()
     }
 }
