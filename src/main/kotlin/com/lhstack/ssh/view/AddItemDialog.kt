@@ -28,6 +28,7 @@ import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.service.SshConfigService
 import com.lhstack.ssh.service.SshConnectionManager
 import java.awt.BorderLayout
+import java.awt.CardLayout
 import java.awt.Dimension
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
@@ -38,6 +39,64 @@ import com.intellij.openapi.fileChooser.FileChooser
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import java.io.File
 import java.util.Base64
+
+/**
+ * 可切换掩码/明文的密码输入组件。
+ *
+ * JPasswordField 会主动禁止复制；仅清除 echoChar 仍然不是普通文本框。
+ * 这里让密码框和普通文本框共享同一个 Document，并通过 CardLayout 切换实际显示的输入框：
+ * 掩码状态保留 JPasswordField 的保护，明文状态使用 JBTextField 的标准复制快捷键。
+ */
+internal class RevealablePasswordField(initialText: String = "") : JPanel(CardLayout()) {
+    private val maskedField = JBPasswordField()
+    private val plainField = JBTextField()
+    private var revealed = false
+
+    init {
+        isOpaque = false
+        plainField.document = maskedField.document
+        maskedField.text = initialText
+        add(maskedField, MASKED_CARD)
+        add(plainField, PLAIN_CARD)
+    }
+
+    val password: CharArray
+        get() = maskedField.password
+
+    internal val isRevealed: Boolean
+        get() = revealed
+
+    fun createRevealCheckbox(): JCheckBox = JCheckBox("显示原文").apply {
+        toolTipText = "明文显示，便于核对与复制"
+        addActionListener { setRevealed(isSelected) }
+    }
+
+    internal fun setRevealed(reveal: Boolean) {
+        if (revealed == reveal) return
+
+        val source = if (revealed) plainField else maskedField
+        val target = if (reveal) plainField else maskedField
+        val selectionStart = source.selectionStart
+        val selectionEnd = source.selectionEnd
+        val caretPosition = source.caretPosition
+
+        revealed = reveal
+        (layout as CardLayout).show(this, if (reveal) PLAIN_CARD else MASKED_CARD)
+
+        val textLength = target.document.length
+        if (selectionStart != selectionEnd) {
+            target.select(selectionStart.coerceAtMost(textLength), selectionEnd.coerceAtMost(textLength))
+        } else {
+            target.caretPosition = caretPosition.coerceAtMost(textLength)
+        }
+        target.requestFocusInWindow()
+    }
+
+    private companion object {
+        const val MASKED_CARD = "masked"
+        const val PLAIN_CARD = "plain"
+    }
+}
 
 internal object AddItemDialogLayoutDefaults {
     fun mainFormConstraints(): GridBagConstraints = GridBagConstraints().apply {
@@ -59,12 +118,9 @@ class AddItemDialog(
     private val hostField = JBTextField(existingConfig?.host ?: "127.0.0.1")
     private val portField = JSpinner(SpinnerNumberModel(existingConfig?.port ?: 22, 1, 65535, 1))
     private val usernameField = JBTextField(existingConfig?.username ?: "root")
-    private val passwordField = JBPasswordField().apply { text = existingConfig?.password ?: "" }
+    private val passwordField = RevealablePasswordField(existingConfig?.password ?: "")
     private val privateKeyArea = JBTextArea(existingConfig?.privateKey ?: "", 4, 30)
-    private val passphraseField = JBPasswordField().apply { text = existingConfig?.passphrase ?: "" }
-    // 数据仅存本地、不经网络传输，允许明文查看密码，省去导出核对的麻烦
-    private val showPasswordCheckbox = createRevealCheckbox(passwordField)
-    private val showPassphraseCheckbox = createRevealCheckbox(passphraseField)
+    private val passphraseField = RevealablePasswordField(existingConfig?.passphrase ?: "")
     private val remoteDirField = JBTextField(existingConfig?.remoteDir ?: "/tmp")
     private val useLocalKeyCheckbox = JCheckBox("使用本地密钥 (~/.ssh/id_rsa)").apply {
         isSelected = existingConfig?.useLocalKey ?: false
@@ -250,23 +306,10 @@ class AddItemDialog(
             g.gridx = 1; g.weightx = 1.0
             add(passwordField, g)
             g.gridx = 2; g.weightx = 0.0
-            add(createRevealCheckbox(passwordField), g)
+            add(passwordField.createRevealCheckbox(), g)
         }
     }
 
-    /**
-     * 创建“显示原文”复选框：勾选后明文显示密码，取消则恢复掩码。
-     * 数据仅存本地，供用户核对已保存的密码，避免导出查看。
-     */
-    private fun createRevealCheckbox(field: JBPasswordField): JCheckBox {
-        val defaultEchoChar = field.echoChar
-        return JCheckBox("显示原文").apply {
-            addActionListener {
-                field.echoChar = if (isSelected) 0.toChar() else defaultEchoChar
-            }
-        }
-    }
-    
     /**
      * 创建密钥认证面板（完整布局）
      */
@@ -280,24 +323,24 @@ class AddItemDialog(
             }
             
             // 使用本地密钥选项（占据整行）
-            g.gridx = 0; g.gridy = 0; g.gridwidth = 2; g.weightx = 1.0
+            g.gridx = 0; g.gridy = 0; g.gridwidth = 3; g.weightx = 1.0
             add(useLocalKeyCheckbox, g)
 
             // 私钥标签和选择按钮在同一行
             g.gridx = 0; g.gridy = 1; g.gridwidth = 1; g.weightx = 0.0
             g.anchor = GridBagConstraints.WEST
             add(JBLabel("私钥:"), g)
-            g.gridx = 1; g.weightx = 1.0
+            g.gridx = 1; g.gridwidth = 2; g.weightx = 1.0
             add(JButton("选择密钥文件...").apply {
                 icon = PluginIcons.Open
                 toolTipText = "从文件系统选择私钥文件"
                 addActionListener { selectKeyFile() }
             }, g)
 
-            // 私钥内容区域（占据整行）
-            g.gridx = 0; g.gridy = 2; g.gridwidth = 2; g.weightx = 1.0
+            // 私钥内容区域（跨满标签列、输入列和尾列，避免被尾列复选框挤窄）
+            g.gridx = 0; g.gridy = 2; g.gridwidth = 3; g.weightx = 1.0
             g.fill = GridBagConstraints.BOTH; g.weighty = 1.0
-            add(JBScrollPane(privateKeyArea).apply { 
+            add(JBScrollPane(privateKeyArea).apply {
                 preferredSize = Dimension(300, 100)
                 minimumSize = Dimension(200, 80)
             }, g)
@@ -309,8 +352,9 @@ class AddItemDialog(
             add(JBLabel("私钥密码:"), g)
             g.gridx = 1; g.weightx = 1.0
             add(passphraseField, g)
-            g.gridx = 2; g.weightx = 0.0
-            add(createRevealCheckbox(passphraseField), g)
+            g.gridx = 2; g.weightx = 0.0; g.fill = GridBagConstraints.NONE
+            add(passphraseField.createRevealCheckbox(), g)
+            g.fill = GridBagConstraints.HORIZONTAL
             
             // 监听使用本地密钥选项变化
             useLocalKeyCheckbox.addActionListener {
@@ -765,9 +809,9 @@ private class JumpHostEditDialog(
     private val hostField = JBTextField(existingJumpHost?.host ?: "")
     private val portField = JSpinner(SpinnerNumberModel(existingJumpHost?.port ?: 22, 1, 65535, 1))
     private val usernameField = JBTextField(existingJumpHost?.username ?: "root")
-    private val passwordField = JBPasswordField().apply { text = existingJumpHost?.password ?: "" }
+    private val passwordField = RevealablePasswordField(existingJumpHost?.password ?: "")
     private val privateKeyArea = JBTextArea(existingJumpHost?.privateKey ?: "", 5, 30)
-    private val passphraseField = JBPasswordField().apply { text = existingJumpHost?.passphrase ?: "" }
+    private val passphraseField = RevealablePasswordField(existingJumpHost?.passphrase ?: "")
     private val useLocalKeyCheckbox = JCheckBox("使用本地密钥 (~/.ssh/id_rsa)").apply {
         isSelected = existingJumpHost?.useLocalKey ?: false
     }
@@ -874,17 +918,7 @@ private class JumpHostEditDialog(
             add(passwordField, gbc)
             gbc.gridx = 2
             gbc.weightx = 0.0
-            add(createRevealCheckbox(passwordField), gbc)
-        }
-    }
-
-    // 数据仅存本地、不经网络传输，允许明文查看密码，省去导出核对的麻烦
-    private fun createRevealCheckbox(field: JBPasswordField): JCheckBox {
-        val defaultEchoChar = field.echoChar
-        return JCheckBox("显示原文").apply {
-            addActionListener {
-                field.echoChar = if (isSelected) 0.toChar() else defaultEchoChar
-            }
+            add(passwordField.createRevealCheckbox(), gbc)
         }
     }
 
@@ -898,19 +932,22 @@ private class JumpHostEditDialog(
             }
             gbc.gridx = 0
             gbc.gridy = 0
-            gbc.gridwidth = 2
+            gbc.gridwidth = 3
             add(useLocalKeyCheckbox, gbc)
 
             gbc.gridy = 1
             gbc.gridwidth = 1
             gbc.weightx = 0.0
             add(JBLabel("私钥:"), gbc)
+            // 私钥区跨满输入列与尾列，避免被“显示原文”所在的尾列挤窄
             gbc.gridx = 1
+            gbc.gridwidth = 2
             gbc.weightx = 1.0
             add(JBScrollPane(privateKeyArea).apply { preferredSize = Dimension(280, 100) }, gbc)
 
             gbc.gridx = 0
             gbc.gridy = 2
+            gbc.gridwidth = 1
             gbc.weightx = 0.0
             add(JBLabel("私钥密码:"), gbc)
             gbc.gridx = 1
@@ -918,7 +955,8 @@ private class JumpHostEditDialog(
             add(passphraseField, gbc)
             gbc.gridx = 2
             gbc.weightx = 0.0
-            add(createRevealCheckbox(passphraseField), gbc)
+            gbc.fill = GridBagConstraints.NONE
+            add(passphraseField.createRevealCheckbox(), gbc)
         }
     }
 
