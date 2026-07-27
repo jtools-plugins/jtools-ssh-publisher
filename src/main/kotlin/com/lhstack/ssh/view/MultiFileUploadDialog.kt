@@ -252,10 +252,21 @@ class MultiFileUploadDialog(
         scriptCardLayout.show(scriptCardPanel, "empty")
         
         // 临时脚本编辑器
+        val availableShells = com.lhstack.ssh.service.LocalShellDetector.availableShells()
         val tempPreScriptEditor = MultiLanguageTextField(shellFileType, project, config.tempPreScript, isLineNumbersShown = true)
         val tempPostScriptEditor = MultiLanguageTextField(shellFileType, project, config.tempPostScript, isLineNumbersShown = true)
+        val tempLocalPreScriptEditor = MultiLanguageTextField(shellFileType, project, config.tempLocalPreScript, isLineNumbersShown = true)
+        val tempLocalPostScriptEditor = MultiLanguageTextField(shellFileType, project, config.tempLocalPostScript, isLineNumbersShown = true)
+        val tempLocalPreShellCombo  = buildShellCombo(availableShells).also { combo ->
+            combo.selectedItem = config.tempLocalPreShellType
+        }
+        val tempLocalPostShellCombo = buildShellCombo(availableShells).also { combo ->
+            combo.selectedItem = config.tempLocalPostShellType
+        }
         Disposer.register(disposable, tempPreScriptEditor)
         Disposer.register(disposable, tempPostScriptEditor)
+        Disposer.register(disposable, tempLocalPreScriptEditor)
+        Disposer.register(disposable, tempLocalPostScriptEditor)
         
         // 监听变化
         remotePathField.document.addDocumentListener(object : javax.swing.event.DocumentListener {
@@ -286,6 +297,27 @@ class MultiFileUploadDialog(
                 config.tempPostScript = tempPostScriptEditor.text
             }
         })
+
+        tempLocalPreScriptEditor.document.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
+            override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
+                config.tempLocalPreScript = tempLocalPreScriptEditor.text
+            }
+        })
+
+        tempLocalPostScriptEditor.document.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
+            override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
+                config.tempLocalPostScript = tempLocalPostScriptEditor.text
+            }
+        })
+
+        tempLocalPreShellCombo.addActionListener {
+            config.tempLocalPreShellType = tempLocalPreShellCombo.selectedItem as? com.lhstack.ssh.model.ScriptConfig.ShellType
+                ?: com.lhstack.ssh.model.ScriptConfig.ShellType.DEFAULT
+        }
+        tempLocalPostShellCombo.addActionListener {
+            config.tempLocalPostShellType = tempLocalPostShellCombo.selectedItem as? com.lhstack.ssh.model.ScriptConfig.ShellType
+                ?: com.lhstack.ssh.model.ScriptConfig.ShellType.DEFAULT
+        }
         
         // 服务器选择变化监听
         serverCheckList.setCheckBoxListListener { idx, selected ->
@@ -382,13 +414,39 @@ class MultiFileUploadDialog(
         
         // 临时脚本Tab
         val tempScriptTabs = JBTabbedPane().apply {
-            addTab("临时前置脚本", JPanel(BorderLayout(0, 3)).apply {
-                add(JBLabel("上传前执行:"), BorderLayout.NORTH)
-                add(tempPreScriptEditor.apply { preferredSize = Dimension(400, 100) }, BorderLayout.CENTER)
+            addTab("前置脚本", JPanel(java.awt.GridLayout(2, 1, 0, 6)).apply {
+                add(JPanel(BorderLayout(0, 3)).apply {
+                    add(JBLabel("临时远程前置脚本（上传前在服务器执行）:"), BorderLayout.NORTH)
+                    add(tempPreScriptEditor.apply { preferredSize = Dimension(400, 80) }, BorderLayout.CENTER)
+                })
+                add(JPanel(BorderLayout(0, 3)).apply {
+                    val hdr = JPanel(BorderLayout(8, 0)).apply {
+                        add(JBLabel("临时本地前置脚本（上传前在本机执行）:"), BorderLayout.WEST)
+                        add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 4, 0)).apply {
+                            add(JBLabel("Shell:"))
+                            add(tempLocalPreShellCombo)
+                        }, BorderLayout.EAST)
+                    }
+                    add(hdr, BorderLayout.NORTH)
+                    add(tempLocalPreScriptEditor.apply { preferredSize = Dimension(400, 80) }, BorderLayout.CENTER)
+                })
             })
-            addTab("临时后置脚本", JPanel(BorderLayout(0, 3)).apply {
-                add(JBLabel("上传后执行:"), BorderLayout.NORTH)
-                add(tempPostScriptEditor.apply { preferredSize = Dimension(400, 100) }, BorderLayout.CENTER)
+            addTab("后置脚本", JPanel(java.awt.GridLayout(2, 1, 0, 6)).apply {
+                add(JPanel(BorderLayout(0, 3)).apply {
+                    add(JBLabel("临时远程后置脚本（上传后在服务器执行）:"), BorderLayout.NORTH)
+                    add(tempPostScriptEditor.apply { preferredSize = Dimension(400, 80) }, BorderLayout.CENTER)
+                })
+                add(JPanel(BorderLayout(0, 3)).apply {
+                    val hdr = JPanel(BorderLayout(8, 0)).apply {
+                        add(JBLabel("临时本地后置脚本（上传后在本机执行）:"), BorderLayout.WEST)
+                        add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 4, 0)).apply {
+                            add(JBLabel("Shell:"))
+                            add(tempLocalPostShellCombo)
+                        }, BorderLayout.EAST)
+                    }
+                    add(hdr, BorderLayout.NORTH)
+                    add(tempLocalPostScriptEditor.apply { preferredSize = Dimension(400, 80) }, BorderLayout.CENTER)
+                })
             })
             minimumSize = Dimension(100, 100)
         }
@@ -488,7 +546,11 @@ class MultiFileUploadDialog(
                     preScripts = preScripts,
                     postScripts = postScripts,
                     tempPreScript = fileConfig.tempPreScript,
-                    tempPostScript = fileConfig.tempPostScript
+                    tempPostScript = fileConfig.tempPostScript,
+                    tempLocalPreScript    = fileConfig.tempLocalPreScript,
+                    tempLocalPreShellType = fileConfig.tempLocalPreShellType,
+                    tempLocalPostScript    = fileConfig.tempLocalPostScript,
+                    tempLocalPostShellType = fileConfig.tempLocalPostShellType
                 ))
             }
         }
@@ -542,7 +604,11 @@ data class FileUploadConfig(
     val selectedServerIds: MutableSet<String> = mutableSetOf(),
     val serverScriptSelections: MutableMap<String, ServerScriptConfig> = mutableMapOf(),
     var tempPreScript: String = "",
-    var tempPostScript: String = ""
+    var tempPostScript: String = "",
+    var tempLocalPreScript: String = "",
+    var tempLocalPreShellType: com.lhstack.ssh.model.ScriptConfig.ShellType = com.lhstack.ssh.model.ScriptConfig.ShellType.DEFAULT,
+    var tempLocalPostScript: String = "",
+    var tempLocalPostShellType: com.lhstack.ssh.model.ScriptConfig.ShellType = com.lhstack.ssh.model.ScriptConfig.ShellType.DEFAULT
 )
 
 /**

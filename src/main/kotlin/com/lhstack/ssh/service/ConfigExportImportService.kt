@@ -105,7 +105,7 @@ object ConfigExportImportService {
             exportData.configs.forEach { configWithScripts ->
                 val config = configWithScripts.config
                 val existingConfig = SshConfigService.getConfigs()
-                    .find { it.group == config.group && it.name == config.name }
+                    .find { it.groupId == config.groupId && it.name == config.name }
                 
                 if (existingConfig != null) {
                     if (overwrite) {
@@ -165,7 +165,7 @@ object ConfigExportImportService {
             
             exportData.uploadTemplates.forEach { template ->
                 val existingTemplate = SshConfigService.getUploadTemplates()
-                    .find { it.group == template.group && it.name == template.name }
+                    .find { it.group == template.group && it.name == template.name }  // upload template keeps string group
                 
                 if (existingTemplate != null) {
                     if (overwrite) {

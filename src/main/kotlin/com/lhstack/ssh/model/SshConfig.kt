@@ -9,7 +9,8 @@ import java.util.UUID
  */
 data class SshConfig(
     var id: String = UUID.randomUUID().toString().replace("-",""),
-    var group: String = "",
+    /** 关联 SshGroup.id；空串表示未分组（显示为"默认"） */
+    var groupId: String = "",
     var name: String = "",
     var host: String = "127.0.0.1",
     var port: Int = 22,
@@ -19,8 +20,10 @@ data class SshConfig(
     var privateKey: String = "",
     var passphrase: String = "",
     var remoteDir: String = "/tmp",
-    var useLocalKey: Boolean = false,  // 是否使用本地密钥（~/.ssh/id_rsa）
-    var jumpHosts: List<JumpHostConfig> = emptyList()
+    var useLocalKey: Boolean = false,
+    var jumpHosts: List<JumpHostConfig> = emptyList(),
+    /** 分组内排序，越小越靠前 */
+    var sortOrder: Int = 0
 ) : Serializable {
     enum class AuthType {
         PASSWORD, KEY
@@ -74,11 +77,34 @@ data class ScriptConfig(
     var sshConfigId: String = "",
     var name: String = "",
     var scriptType: ScriptType = ScriptType.PRE,
+    var shellType: ShellType = ShellType.DEFAULT,
     var content: String = "",
     var enabled: Boolean = true
 ) : Serializable {
     enum class ScriptType {
-        PRE, POST
+        /** 远程前置脚本（SSH 执行） */
+        PRE,
+        /** 远程后置脚本（SSH 执行） */
+        POST,
+        /** 本地前置脚本（本机 ProcessBuilder 执行） */
+        LOCAL_PRE,
+        /** 本地后置脚本（本机 ProcessBuilder 执行） */
+        LOCAL_POST;
+
+        val isLocal: Boolean get() = this == LOCAL_PRE || this == LOCAL_POST
+    }
+
+    /**
+     * 本地脚本使用的 Shell 类型，仅对 LOCAL_PRE / LOCAL_POST 生效。
+     * DEFAULT 在 macOS/Linux 使用 /bin/sh，在 Windows 使用 cmd。
+     */
+    enum class ShellType(val label: String) {
+        DEFAULT("默认（系统 sh / cmd）"),
+        BASH("Bash"),
+        ZSH("Zsh"),
+        SH("sh"),
+        CMD("Windows cmd"),
+        POWERSHELL("PowerShell")
     }
 }
 

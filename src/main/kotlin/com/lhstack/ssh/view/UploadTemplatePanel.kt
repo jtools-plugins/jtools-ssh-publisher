@@ -328,7 +328,9 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
             preScripts = preScripts,
             postScripts = postScripts,
             tempPreScript = template.preScript,
-            tempPostScript = template.postScript
+            tempPostScript = template.postScript,
+            tempLocalPreScript = "",
+            tempLocalPostScript = ""
         )
 
         TransferTaskManager.addTask(task)
@@ -450,6 +452,10 @@ class UploadTemplateDialog(
     // 临时脚本编辑器
     private lateinit var tempPreScriptEditor: MultiLanguageTextField
     private lateinit var tempPostScriptEditor: MultiLanguageTextField
+    private lateinit var tempLocalPreScriptEditor: MultiLanguageTextField
+    private lateinit var tempLocalPostScriptEditor: MultiLanguageTextField
+    private lateinit var tempLocalPreShellCombo: JComboBox<com.lhstack.ssh.model.ScriptConfig.ShellType>
+    private lateinit var tempLocalPostShellCombo: JComboBox<com.lhstack.ssh.model.ScriptConfig.ShellType>
 
     private val shellFileType: LanguageFileType by lazy {
         FileTypeManager.getInstance().getFileTypeByExtension("sh") as? LanguageFileType
@@ -513,8 +519,17 @@ class UploadTemplateDialog(
             MultiLanguageTextField(shellFileType, project, template?.preScript ?: "", isLineNumbersShown = true)
         tempPostScriptEditor =
             MultiLanguageTextField(shellFileType, project, template?.postScript ?: "", isLineNumbersShown = true)
+        tempLocalPreScriptEditor =
+            MultiLanguageTextField(shellFileType, project, "", isLineNumbersShown = true)
+        tempLocalPostScriptEditor =
+            MultiLanguageTextField(shellFileType, project, "", isLineNumbersShown = true)
         Disposer.register(disposable, tempPreScriptEditor)
         Disposer.register(disposable, tempPostScriptEditor)
+        Disposer.register(disposable, tempLocalPreScriptEditor)
+        Disposer.register(disposable, tempLocalPostScriptEditor)
+        val availableShells = com.lhstack.ssh.service.LocalShellDetector.availableShells()
+        tempLocalPreShellCombo  = buildShellCombo(availableShells)
+        tempLocalPostShellCombo = buildShellCombo(availableShells)
 
         val panel = JPanel(GridBagLayout())
         val gbc = GridBagConstraints().apply {
@@ -587,8 +602,8 @@ class UploadTemplateDialog(
         gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 2
         gbc.weightx = 1.0; gbc.weighty = 1.0; gbc.fill = GridBagConstraints.BOTH
         val scriptTabs = JTabbedPane().apply {
-            addTab("前置脚本", createScriptPanel(preScriptsTable, tempPreScriptEditor, "上传前执行"))
-            addTab("后置脚本", createScriptPanel(postScriptsTable, tempPostScriptEditor, "上传后执行"))
+            addTab("前置脚本", createScriptPanel(preScriptsTable, tempPreScriptEditor, tempLocalPreScriptEditor, tempLocalPreShellCombo, "上传前执行"))
+            addTab("后置脚本", createScriptPanel(postScriptsTable, tempPostScriptEditor, tempLocalPostScriptEditor, tempLocalPostShellCombo, "上传后执行"))
         }
         panel.add(scriptTabs, gbc)
 
@@ -596,29 +611,39 @@ class UploadTemplateDialog(
         return panel
     }
 
-    private fun createScriptPanel(table: JBTable, editor: MultiLanguageTextField, label: String): JComponent {
+    private fun createScriptPanel(
+        table: JBTable,
+        editor: MultiLanguageTextField,
+        localEditor: MultiLanguageTextField,
+        shellCombo: JComboBox<com.lhstack.ssh.model.ScriptConfig.ShellType>,
+        label: String
+    ): JComponent {
         table.setShowGrid(false)
         table.tableHeader.reorderingAllowed = false
         table.rowHeight = 24
-
-        table.columnModel.getColumn(0).apply {
-            preferredWidth = 40
-            maxWidth = 40
-            minWidth = 40
-        }
+        table.columnModel.getColumn(0).apply { preferredWidth = 40; maxWidth = 40; minWidth = 40 }
         table.columnModel.getColumn(1).preferredWidth = 150
         table.autoResizeMode = JTable.AUTO_RESIZE_LAST_COLUMN
 
         val tablePanel = ToolbarDecorator.createDecorator(table)
-            .disableAddAction()
-            .disableRemoveAction()
-            .createPanel().apply {
-                preferredSize = Dimension(650, 100)
-            }
+            .disableAddAction().disableRemoveAction()
+            .createPanel().apply { preferredSize = Dimension(650, 100) }
 
         val editorPanel = JPanel(BorderLayout(0, 5)).apply {
-            add(JBLabel("临时脚本 ($label):"), BorderLayout.NORTH)
-            add(editor.apply { preferredSize = Dimension(650, 120) }, BorderLayout.CENTER)
+            add(JBLabel("临时脚本 ($label，远程执行):"), BorderLayout.NORTH)
+            add(editor.apply { preferredSize = Dimension(650, 85) }, BorderLayout.CENTER)
+        }
+
+        val localHeader = JPanel(BorderLayout(8, 0)).apply {
+            add(JBLabel("本地临时脚本 ($label，本机执行):"), BorderLayout.WEST)
+            add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 4, 0)).apply {
+                add(JBLabel("Shell:"))
+                add(shellCombo)
+            }, BorderLayout.EAST)
+        }
+        val localEditorPanel = JPanel(BorderLayout(0, 5)).apply {
+            add(localHeader, BorderLayout.NORTH)
+            add(localEditor.apply { preferredSize = Dimension(650, 85) }, BorderLayout.CENTER)
         }
 
         return JPanel(BorderLayout(0, 10)).apply {
@@ -627,7 +652,10 @@ class UploadTemplateDialog(
                 add(JBLabel("服务器脚本 (可选):"), BorderLayout.NORTH)
                 add(tablePanel, BorderLayout.CENTER)
             }, BorderLayout.NORTH)
-            add(editorPanel, BorderLayout.CENTER)
+            add(JPanel(java.awt.GridLayout(2, 1, 0, 8)).apply {
+                add(editorPanel)
+                add(localEditorPanel)
+            }, BorderLayout.CENTER)
         }
     }
 

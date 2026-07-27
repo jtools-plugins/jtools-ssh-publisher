@@ -24,6 +24,7 @@ import com.lhstack.ssh.PluginIcons
 import com.lhstack.ssh.component.MultiLanguageTextField
 import com.lhstack.ssh.model.JumpHostConfig
 import com.lhstack.ssh.model.ScriptConfig
+import com.lhstack.ssh.model.SshGroup
 import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.service.SshConfigService
 import com.lhstack.ssh.service.SshConnectionManager
@@ -168,10 +169,14 @@ class AddItemDialog(
     }
 
     private fun loadGroups() {
-        val groups = SshConfigService.getConfigsByGroup().keys.toMutableList()
+        val groups = SshConfigService.getGroups().map { it.name }.toMutableList()
         if (groups.isEmpty()) groups.add("默认")
         groupCombo.model = CollectionComboBoxModel(groups)
-        groupCombo.selectedItem = existingConfig?.group ?: defaultGroup ?: groups.firstOrNull() ?: "默认"
+        val selectedGroupName = existingConfig?.let { SshConfigService.getGroupById(it.groupId)?.name }
+            ?: defaultGroup
+            ?: groups.firstOrNull()
+            ?: "默认"
+        groupCombo.selectedItem = selectedGroupName
     }
 
     private fun loadScripts() {
@@ -273,6 +278,8 @@ class AddItemDialog(
         val scriptTabs = JTabbedPane(JTabbedPane.TOP).apply {
             addTab("前置脚本", createScriptEditorPanel(ScriptConfig.ScriptType.PRE))
             addTab("后置脚本", createScriptEditorPanel(ScriptConfig.ScriptType.POST))
+            addTab("本地前置脚本", createScriptEditorPanel(ScriptConfig.ScriptType.LOCAL_PRE))
+            addTab("本地后置脚本", createScriptEditorPanel(ScriptConfig.ScriptType.LOCAL_POST))
         }
         mainPanel.add(scriptTabs, gbc)
 
@@ -496,6 +503,7 @@ class AddItemDialog(
                     sshConfigId = existingConfig?.id ?: "",
                     name = "新脚本",
                     scriptType = scriptType,
+                    shellType = if (scriptType.isLocal) ScriptConfig.ShellType.DEFAULT else ScriptConfig.ShellType.DEFAULT,
                     content = "#!/bin/bash\n",
                     enabled = true
                 )
@@ -695,9 +703,11 @@ class AddItemDialog(
     }
 
     private fun buildConfig(): SshConfig {
+        val groupName = (groupCombo.selectedItem as? String)?.trim() ?: "默认"
+        val group = SshConfigService.getOrCreateGroupByName(groupName)
         return SshConfig(
             id = existingConfig?.id ?: java.util.UUID.randomUUID().toString(),
-            group = (groupCombo.selectedItem as? String)?.trim() ?: "默认",
+            groupId = group.id,
             name = nameField.text.trim(),
             host = hostField.text.trim(),
             port = portField.value as Int,
@@ -755,9 +765,9 @@ class AddItemDialog(
             return
         }
 /*        // 检查 group+name 是否重复（排除自己）
-        println("[DEBUG] Checking duplicate: group=${config.group}, name=${config.name}, excludeId=${existingConfig?.id}")
-        if (SshConfigService.existsByGroupAndName(config.group, config.name, existingConfig?.id)) {
-            Messages.showErrorDialog(project, "分组 \"${config.group}\" 下已存在名称为 \"${config.name}\" 的配置", "错误")
+        // duplicate check uses groupId
+        if (false) { // duplicate check disabled; handled by DB unique constraint
+            Messages.showErrorDialog(project, "该分组下已存在同名配置", "错误")
             return
         }*/
 
