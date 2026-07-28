@@ -287,7 +287,7 @@ object TransferTaskManager {
                 val label = if (script.scriptType.isLocal) "本地前置脚本" else "前置脚本"
                 updateTask(task) { message = "执行$label: ${script.name}"; addLog("执行$label: ${script.name}") }
                 try {
-                    val result = if (script.scriptType.isLocal) LocalScriptExecutor.execute(script)
+                    val result = if (script.scriptType.isLocal) LocalScriptExecutor.execute(script, task.localWorkDir!!)
                                  else manager.executeCommand(script.content)
                     if (result.isNotBlank()) task.addLog(result)
                 } catch (e: Exception) {
@@ -304,7 +304,8 @@ object TransferTaskManager {
                         content = task.tempLocalPreScript,
                         scriptType = com.lhstack.ssh.model.ScriptConfig.ScriptType.LOCAL_PRE,
                         shellType = task.tempLocalPreShellType
-                    )
+                    ),
+                    task.localWorkDir!!
                 )
                 if (result.isNotBlank()) task.addLog(result)
             } catch (e: Exception) { task.addLog("✗ 本地脚本执行失败: ${e.message}") }
@@ -326,7 +327,7 @@ object TransferTaskManager {
                 val label = if (script.scriptType.isLocal) "本地后置脚本" else "后置脚本"
                 updateTask(task) { message = "执行$label: ${script.name}"; addLog("执行$label: ${script.name}") }
                 try {
-                    val result = if (script.scriptType.isLocal) LocalScriptExecutor.execute(script)
+                    val result = if (script.scriptType.isLocal) LocalScriptExecutor.execute(script, task.localWorkDir!!)
                                  else manager.executeCommand(script.content)
                     if (result.isNotBlank()) task.addLog(result)
                 } catch (e: Exception) {
@@ -351,7 +352,8 @@ object TransferTaskManager {
                         content = task.tempLocalPostScript,
                         scriptType = com.lhstack.ssh.model.ScriptConfig.ScriptType.LOCAL_POST,
                         shellType = task.tempLocalPostShellType
-                    )
+                    ),
+                    task.localWorkDir!!
                 )
                 if (result.isNotBlank()) task.addLog(result)
             } catch (e: Exception) { task.addLog("✗ 本地脚本执行失败: ${e.message}") }

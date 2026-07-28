@@ -18,7 +18,10 @@ import com.intellij.ui.table.JBTable
 import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
 import com.lhstack.ssh.PluginIcons
+import com.lhstack.ssh.component.CollapsibleSection
 import com.lhstack.ssh.component.MultiLanguageTextField
+import com.lhstack.ssh.component.SCRIPT_EDITOR_HEIGHT
+import com.lhstack.ssh.component.verticalScrollPane
 import com.lhstack.ssh.model.ScriptConfig
 import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.model.TransferTask
@@ -67,20 +70,19 @@ class UploadDialog(
 
     init {
         title = "上传文件 - ${config.name} (${config.host})"
-        setSize(650, 580)
+        setSize(680, 760)
         setOKButtonText("添加任务")
         setCancelButtonText("关闭")
         loadScripts()
         init()
     }
 
+    /** 前置/后置表格各自同时装载远程脚本和本地脚本，执行位置由表格「位置」列区分。 */
     private fun loadScripts() {
-        SshConfigService.getPreScripts(config.id).forEach {
-            preScriptsModel.addScript(it, false)
-        }
-        SshConfigService.getPostScripts(config.id).forEach {
-            postScriptsModel.addScript(it, false)
-        }
+        (SshConfigService.getPreScripts(config.id) + SshConfigService.getLocalPreScripts(config.id))
+            .forEach { preScriptsModel.addScript(it, false) }
+        (SshConfigService.getPostScripts(config.id) + SshConfigService.getLocalPostScripts(config.id))
+            .forEach { postScriptsModel.addScript(it, false) }
     }
 
     override fun createCenterPanel(): JComponent {
@@ -135,6 +137,10 @@ class UploadDialog(
         }
     }
 
+    /**
+     * 单个 Tab 内容：三个可折叠区块（服务器脚本 / 远程临时脚本 / 本地临时脚本），
+     * 整体套纵向滚动条，编辑器高度固定，弹窗高度不受影响。
+     */
     private fun createScriptPanel(
         table: JBTable,
         remoteEditor: MultiLanguageTextField,
@@ -147,37 +153,21 @@ class UploadDialog(
         table.rowHeight = 24
         table.columnModel.getColumn(0).apply { preferredWidth = 40; maxWidth = 40; minWidth = 40 }
         table.columnModel.getColumn(1).apply { preferredWidth = 150; minWidth = 100 }
+        table.columnModel.getColumn(2).apply { preferredWidth = 60; maxWidth = 60; minWidth = 60 }
         table.autoResizeMode = JTable.AUTO_RESIZE_LAST_COLUMN
 
         val tablePanel = ToolbarDecorator.createDecorator(table)
             .disableAddAction().disableRemoveAction()
-            .createPanel().apply { preferredSize = Dimension(600, 110) }
+            .createPanel().apply { preferredSize = Dimension(600, 120) }
 
-        val remotePanel = JPanel(BorderLayout(0, 4)).apply {
-            add(JBLabel("临时脚本（$label，远程执行，不保存）:"), BorderLayout.NORTH)
-            add(remoteEditor.apply { preferredSize = Dimension(600, 75) }, BorderLayout.CENTER)
-        }
+        remoteEditor.preferredSize = Dimension(600, SCRIPT_EDITOR_HEIGHT)
+        localEditor.preferredSize = Dimension(600, SCRIPT_EDITOR_HEIGHT)
 
-        // 本地脚本标题行：文字 + shell 下拉
-        val localHeader = JPanel(BorderLayout(8, 0)).apply {
-            add(JBLabel("本地临时脚本（$label，本机执行，不保存）:"), BorderLayout.WEST)
-            add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 4, 0)).apply {
-                add(JBLabel("Shell:"))
-                add(shellCombo)
-            }, BorderLayout.EAST)
-        }
-        val localPanel = JPanel(BorderLayout(0, 4)).apply {
-            add(localHeader, BorderLayout.NORTH)
-            add(localEditor.apply { preferredSize = Dimension(600, 75) }, BorderLayout.CENTER)
-        }
-
-        return JPanel(BorderLayout(0, 8)).apply {
-            add(tablePanel, BorderLayout.NORTH)
-            add(JPanel(java.awt.GridLayout(2, 1, 0, 8)).apply {
-                add(remotePanel)
-                add(localPanel)
-            }, BorderLayout.CENTER)
-        }
+        return verticalScrollPane(
+            CollapsibleSection("已保存脚本（可选）", tablePanel),
+            CollapsibleSection("临时脚本（$label，远程执行，不保存）", remoteEditor),
+            CollapsibleSection("本地临时脚本（$label，本机执行，不保存）", localEditor, trailing = shellCombo)
+        )
     }
 
     override fun doOKAction() {
@@ -217,7 +207,8 @@ class UploadDialog(
                 ?: ScriptConfig.ShellType.DEFAULT,
             tempLocalPostScript    = tempLocalPostScriptEditor.text.trim(),
             tempLocalPostShellType = tempLocalPostShellCombo.selectedItem as? ScriptConfig.ShellType
-                ?: ScriptConfig.ShellType.DEFAULT
+                ?: ScriptConfig.ShellType.DEFAULT,
+            localWorkDir = project.basePath
         )
 
         TransferTaskManager.addTask(task)
@@ -260,7 +251,7 @@ class UploadScriptTableModel : AbstractTableModel() {
     private data class ScriptItem(val script: ScriptConfig, var selected: Boolean)
 
     private val items = mutableListOf<ScriptItem>()
-    private val columns = arrayOf("选择", "名称", "内容预览")
+    private val columns = arrayOf("选择", "名称", "位置", "内容预览")
 
     override fun getRowCount() = items.size
     override fun getColumnCount() = columns.size
@@ -277,7 +268,8 @@ class UploadScriptTableModel : AbstractTableModel() {
         return when (columnIndex) {
             0 -> item.selected
             1 -> item.script.name
-            2 -> item.script.content.replace("\n", " ").take(60)
+            2 -> if (item.script.scriptType.isLocal) "本机" else "服务器"
+            3 -> item.script.content.replace("\n", " ").take(60)
             else -> ""
         }
     }

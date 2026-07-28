@@ -27,7 +27,10 @@ import com.intellij.ui.table.JBTable
 import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.ui.JBUI
 import com.lhstack.ssh.PluginIcons
+import com.lhstack.ssh.component.CollapsibleSection
 import com.lhstack.ssh.component.MultiLanguageTextField
+import com.lhstack.ssh.component.SCRIPT_EDITOR_HEIGHT
+import com.lhstack.ssh.component.verticalScrollPane
 import com.lhstack.ssh.model.ScriptConfig
 import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.model.TransferTask
@@ -237,7 +240,8 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
                 preScripts = preScripts,
                 postScripts = postScripts,
                 tempPreScript = template.preScript,
-                tempPostScript = template.postScript
+                tempPostScript = template.postScript,
+                localWorkDir = project.basePath
             )
 
             TransferTaskManager.addTask(task)
@@ -329,8 +333,7 @@ class UploadTemplatePanel(private val project: Project) : JPanel(BorderLayout())
             postScripts = postScripts,
             tempPreScript = template.preScript,
             tempPostScript = template.postScript,
-            tempLocalPreScript = "",
-            tempLocalPostScript = ""
+            localWorkDir = project.basePath
         )
 
         TransferTaskManager.addTask(task)
@@ -505,10 +508,12 @@ class UploadTemplateDialog(
         val selectedPreIds = template?.preScriptIds ?: emptyList()
         val selectedPostIds = template?.postScriptIds ?: emptyList()
 
-        SshConfigService.getPreScripts(selectedConfig.id).forEach {
+        (SshConfigService.getPreScripts(selectedConfig.id) +
+                SshConfigService.getLocalPreScripts(selectedConfig.id)).forEach {
             preScriptsModel.addScript(it, it.id in selectedPreIds)
         }
-        SshConfigService.getPostScripts(selectedConfig.id).forEach {
+        (SshConfigService.getPostScripts(selectedConfig.id) +
+                SshConfigService.getLocalPostScripts(selectedConfig.id)).forEach {
             postScriptsModel.addScript(it, it.id in selectedPostIds)
         }
     }
@@ -623,40 +628,21 @@ class UploadTemplateDialog(
         table.rowHeight = 24
         table.columnModel.getColumn(0).apply { preferredWidth = 40; maxWidth = 40; minWidth = 40 }
         table.columnModel.getColumn(1).preferredWidth = 150
+        table.columnModel.getColumn(2).apply { preferredWidth = 60; maxWidth = 60; minWidth = 60 }
         table.autoResizeMode = JTable.AUTO_RESIZE_LAST_COLUMN
 
         val tablePanel = ToolbarDecorator.createDecorator(table)
             .disableAddAction().disableRemoveAction()
-            .createPanel().apply { preferredSize = Dimension(650, 100) }
+            .createPanel().apply { preferredSize = Dimension(650, 120) }
 
-        val editorPanel = JPanel(BorderLayout(0, 5)).apply {
-            add(JBLabel("临时脚本 ($label，远程执行):"), BorderLayout.NORTH)
-            add(editor.apply { preferredSize = Dimension(650, 85) }, BorderLayout.CENTER)
-        }
+        editor.preferredSize = Dimension(650, SCRIPT_EDITOR_HEIGHT)
+        localEditor.preferredSize = Dimension(650, SCRIPT_EDITOR_HEIGHT)
 
-        val localHeader = JPanel(BorderLayout(8, 0)).apply {
-            add(JBLabel("本地临时脚本 ($label，本机执行):"), BorderLayout.WEST)
-            add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 4, 0)).apply {
-                add(JBLabel("Shell:"))
-                add(shellCombo)
-            }, BorderLayout.EAST)
-        }
-        val localEditorPanel = JPanel(BorderLayout(0, 5)).apply {
-            add(localHeader, BorderLayout.NORTH)
-            add(localEditor.apply { preferredSize = Dimension(650, 85) }, BorderLayout.CENTER)
-        }
-
-        return JPanel(BorderLayout(0, 10)).apply {
-            border = JBUI.Borders.empty(5)
-            add(JPanel(BorderLayout()).apply {
-                add(JBLabel("服务器脚本 (可选):"), BorderLayout.NORTH)
-                add(tablePanel, BorderLayout.CENTER)
-            }, BorderLayout.NORTH)
-            add(JPanel(java.awt.GridLayout(2, 1, 0, 8)).apply {
-                add(editorPanel)
-                add(localEditorPanel)
-            }, BorderLayout.CENTER)
-        }
+        return verticalScrollPane(
+            CollapsibleSection("已保存脚本（可选）", tablePanel),
+            CollapsibleSection("临时脚本（$label，远程执行）", editor),
+            CollapsibleSection("本地临时脚本（$label，本机执行）", localEditor, trailing = shellCombo)
+        ).apply { border = JBUI.Borders.empty(5) }
     }
 
     override fun doOKAction() {
@@ -711,7 +697,7 @@ class TemplateScriptTableModel : AbstractTableModel() {
     private data class ScriptItem(val script: ScriptConfig, var selected: Boolean)
 
     private val items = mutableListOf<ScriptItem>()
-    private val columns = arrayOf("选择", "名称", "内容预览")
+    private val columns = arrayOf("选择", "名称", "位置", "内容预览")
 
     override fun getRowCount() = items.size
     override fun getColumnCount() = columns.size
@@ -728,7 +714,8 @@ class TemplateScriptTableModel : AbstractTableModel() {
         return when (columnIndex) {
             0 -> item.selected
             1 -> item.script.name
-            2 -> item.script.content.replace("\n", " ").take(60)
+            2 -> if (item.script.scriptType.isLocal) "本机" else "服务器"
+            3 -> item.script.content.replace("\n", " ").take(60)
             else -> ""
         }
     }

@@ -13,12 +13,15 @@ object LocalScriptExecutor {
     /**
      * 执行本地脚本，返回合并后的 stdout + stderr 输出。
      * 脚本内容写入临时文件再执行，执行完毕后删除。
+     *
+     * @param workDir 脚本工作目录（当前项目根目录），必须存在且为目录
      */
-    fun execute(script: ScriptConfig): String {
+    fun execute(script: ScriptConfig, workDir: String): String {
         val command = buildCommand(script)
         val tmpFile = createTempScript(script.content)
         return try {
             val process = ProcessBuilder(command + tmpFile.absolutePath)
+                .directory(resolveWorkDir(workDir))
                 .redirectErrorStream(true)
                 .start()
             val output = process.inputStream.bufferedReader().readText()
@@ -32,6 +35,13 @@ object LocalScriptExecutor {
         } finally {
             tmpFile.delete()
         }
+    }
+
+    /** 工作目录必须是已存在的目录，否则直接报错而不是回退到 IDE 进程目录。 */
+    private fun resolveWorkDir(workDir: String): java.io.File {
+        val dir = java.io.File(workDir)
+        require(dir.isDirectory) { "本地脚本工作目录不可用: $workDir" }
+        return dir
     }
 
     private fun buildCommand(script: ScriptConfig): List<String> {

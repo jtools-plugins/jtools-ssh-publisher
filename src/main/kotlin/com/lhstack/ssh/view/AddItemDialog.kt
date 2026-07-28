@@ -21,11 +21,13 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.ui.table.JBTable
 import com.intellij.util.ui.JBUI
 import com.lhstack.ssh.PluginIcons
+import com.lhstack.ssh.component.CollapsibleSection
 import com.lhstack.ssh.component.MultiLanguageTextField
 import com.lhstack.ssh.model.JumpHostConfig
 import com.lhstack.ssh.model.ScriptConfig
 import com.lhstack.ssh.model.SshGroup
 import com.lhstack.ssh.model.SshConfig
+import com.lhstack.ssh.service.LocalShellDetector
 import com.lhstack.ssh.service.SshConfigService
 import com.lhstack.ssh.service.SshConnectionManager
 import java.awt.BorderLayout
@@ -139,24 +141,21 @@ class AddItemDialog(
     private lateinit var keyPanel: JPanel
     private lateinit var mainPanel: JPanel
 
-    // 脚本编辑器（Tab+列表+编辑器方式）
-    private val preScripts = mutableListOf<ScriptConfig>()
-    private val postScripts = mutableListOf<ScriptConfig>()
+    // 脚本编辑器（Tab+列表+编辑器方式），四种脚本类型各自独立一份列表
+    private val scriptsByType: Map<ScriptConfig.ScriptType, MutableList<ScriptConfig>> =
+        ScriptConfig.ScriptType.values().associateWith { mutableListOf() }
     private val jumpHosts = mutableListOf<JumpHostConfig>()
-    private lateinit var preScriptListModel: DefaultListModel<ScriptConfig>
-    private lateinit var postScriptListModel: DefaultListModel<ScriptConfig>
-    private lateinit var preScriptList: JBList<ScriptConfig>
-    private lateinit var postScriptList: JBList<ScriptConfig>
     private lateinit var jumpHostListModel: DefaultListModel<JumpHostConfig>
     private lateinit var jumpHostList: JBList<JumpHostConfig>
-    private lateinit var preScriptEditor: MultiLanguageTextField
-    private lateinit var postScriptEditor: MultiLanguageTextField
-    private lateinit var preScriptNameField: JBTextField
-    private lateinit var postScriptNameField: JBTextField
     
     private val shellFileType: LanguageFileType by lazy {
         FileTypeManager.getInstance().getFileTypeByExtension("sh") as? LanguageFileType
             ?: PlainTextFileType.INSTANCE
+    }
+
+    /** 当前操作系统可用的本地 Shell，仅本地脚本使用 */
+    private val availableShells: List<ScriptConfig.ShellType> by lazy {
+        LocalShellDetector.availableShells()
     }
 
     init {
@@ -180,11 +179,11 @@ class AddItemDialog(
     }
 
     private fun loadScripts() {
-        existingConfig?.let { config ->
-            SshConfigService.getPreScripts(config.id).forEach { preScripts.add(it) }
-            SshConfigService.getPostScripts(config.id).forEach { postScripts.add(it) }
-            jumpHosts.addAll(config.jumpHosts)
+        val config = existingConfig ?: return
+        SshConfigService.getScriptsByConfigId(config.id).forEach { script ->
+            scriptsByType.getValue(script.scriptType).add(script)
         }
+        jumpHosts.addAll(config.jumpHosts)
     }
 
     override fun createCenterPanel(): JComponent {
@@ -272,7 +271,7 @@ class AddItemDialog(
         gbc.fill = GridBagConstraints.BOTH
         mainPanel.add(createJumpHostPanel(), gbc)
 
-        // 脚本Tab（使用原生JTabbedPane避免边距问题）
+        // 脚本Tab（使用原生JTabbedPane避免边距问题），整体可折叠
         row++
         gbc.gridy = row; gbc.weighty = 1.0; gbc.fill = GridBagConstraints.BOTH
         val scriptTabs = JTabbedPane(JTabbedPane.TOP).apply {
@@ -280,8 +279,9 @@ class AddItemDialog(
             addTab("后置脚本", createScriptEditorPanel(ScriptConfig.ScriptType.POST))
             addTab("本地前置脚本", createScriptEditorPanel(ScriptConfig.ScriptType.LOCAL_PRE))
             addTab("本地后置脚本", createScriptEditorPanel(ScriptConfig.ScriptType.LOCAL_POST))
+            preferredSize = Dimension(600, 320)
         }
-        mainPanel.add(scriptTabs, gbc)
+        mainPanel.add(CollapsibleSection("脚本配置", scriptTabs), gbc)
 
         // 测试连接按钮
         row++
@@ -451,129 +451,162 @@ class AddItemDialog(
 
     /**
      * 创建脚本编辑面板（列表+编辑器方式）
+     *
+     * 四种脚本类型各自持有独立列表，本地脚本额外提供 Shell 选择。
      */
     private fun createScriptEditorPanel(scriptType: ScriptConfig.ScriptType): JComponent {
-        val scripts = if (scriptType == ScriptConfig.ScriptType.PRE) preScripts else postScripts
-        val listModel = DefaultListModel<ScriptConfig>().apply {
-            scripts.forEach { addElement(it) }
-        }
+        val scripts = scriptsOf(scriptType)
+        val listModel = DefaultListModel<ScriptConfig>().apply { scripts.forEach { addElement(it) } }
         val scriptList = JBList(listModel).apply {
             cellRenderer = ScriptListCellRenderer()
             selectionMode = ListSelectionModel.SINGLE_SELECTION
         }
-        
+
         val nameField = JBTextField()
-        val editor = MultiLanguageTextField(shellFileType, project, "#!/bin/bash\n", isLineNumbersShown = true)
+        val editor = MultiLanguageTextField(shellFileType, project, DEFAULT_SCRIPT_CONTENT, isLineNumbersShown = true)
         Disposer.register(disposable, editor)
-        
-        // 保存引用
-        if (scriptType == ScriptConfig.ScriptType.PRE) {
-            preScriptListModel = listModel
-            preScriptList = scriptList
-            preScriptEditor = editor
-            preScriptNameField = nameField
-        } else {
-            postScriptListModel = listModel
-            postScriptList = scriptList
-            postScriptEditor = editor
-            postScriptNameField = nameField
-        }
-        
-        // 右侧编辑区域
-        val editorPanel = JPanel(BorderLayout()).apply {
-            // 顶部：名称
-            val topPanel = JPanel(BorderLayout()).apply {
-                add(JBLabel("名称:"), BorderLayout.WEST)
-                add(nameField, BorderLayout.CENTER)
-            }
-            add(topPanel, BorderLayout.NORTH)
-            
-            // 中间：编辑器
-            add(editor.apply { 
-                preferredSize = Dimension(350, 200)
-                minimumSize = Dimension(200, 100)
-            }, BorderLayout.CENTER)
-        }
-        
-        // 左侧列表面板（带工具栏，禁用上下移动按钮）
-        val listPanel = ToolbarDecorator.createDecorator(scriptList)
-            .setAddAction {
-                val newScript = ScriptConfig(
-                    id = System.currentTimeMillis().toString(),
-                    sshConfigId = existingConfig?.id ?: "",
-                    name = "新脚本",
-                    scriptType = scriptType,
-                    shellType = if (scriptType.isLocal) ScriptConfig.ShellType.DEFAULT else ScriptConfig.ShellType.DEFAULT,
-                    content = "#!/bin/bash\n",
-                    enabled = true
-                )
-                scripts.add(newScript)
-                listModel.addElement(newScript)
-                scriptList.selectedIndex = listModel.size() - 1
-            }
-            .setRemoveAction {
-                val selectedIndex = scriptList.selectedIndex
-                if (selectedIndex >= 0) {
-                    scripts.removeAt(selectedIndex)
-                    listModel.remove(selectedIndex)
-                    // 选中前一个或后一个
-                    if (listModel.size() > 0) {
-                        scriptList.selectedIndex = minOf(selectedIndex, listModel.size() - 1)
-                    }
-                }
-            }
-            .disableUpDownActions()
-            .setPreferredSize(Dimension(150, 200))
-            .createPanel()
-        
-        // 列表选择监听
-        scriptList.addListSelectionListener { e ->
-            if (!e.valueIsAdjusting) {
-                val selectedIndex = scriptList.selectedIndex
-                if (selectedIndex >= 0 && selectedIndex < scripts.size) {
-                    val script = scripts[selectedIndex]
-                    nameField.text = script.name
-                    editor.text = script.content
-                }
-            }
-        }
-        
-        // 编辑器内容变化监听（自动保存到脚本对象）
-        editor.document.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
-            override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
-                val selectedIndex = scriptList.selectedIndex
-                if (selectedIndex >= 0 && selectedIndex < scripts.size) {
-                    scripts[selectedIndex] = scripts[selectedIndex].copy(content = editor.text)
-                }
-            }
-        })
-        
-        // 名称变化监听
-        nameField.document.addDocumentListener(object : javax.swing.event.DocumentListener {
-            override fun insertUpdate(e: javax.swing.event.DocumentEvent?) = updateName()
-            override fun removeUpdate(e: javax.swing.event.DocumentEvent?) = updateName()
-            override fun changedUpdate(e: javax.swing.event.DocumentEvent?) = updateName()
-            
-            private fun updateName() {
-                val selectedIndex = scriptList.selectedIndex
-                if (selectedIndex >= 0 && selectedIndex < scripts.size) {
-                    scripts[selectedIndex] = scripts[selectedIndex].copy(name = nameField.text)
-                    listModel.setElementAt(scripts[selectedIndex], selectedIndex)
-                }
-            }
-        })
-        
-        // 初始选中第一个
-        if (listModel.size() > 0) {
-            scriptList.selectedIndex = 0
-        }
-        
-        // 使用分割面板
+
+        val shellCombo = if (scriptType.isLocal) buildShellCombo(availableShells) else null
+
+        val listPanel = createScriptListPanel(scriptList, listModel, scripts, scriptType)
+        val editorPanel = createScriptEditorArea(nameField, editor, shellCombo)
+
+        bindScriptSelection(scriptList, scripts, nameField, editor, shellCombo)
+        bindScriptContent(scriptList, scripts, editor)
+        bindScriptName(scriptList, scripts, listModel, nameField)
+        shellCombo?.let { bindScriptShellType(scriptList, scripts, it) }
+
+        if (listModel.size() > 0) scriptList.selectedIndex = 0
+
         return JBSplitter(false).apply {
             firstComponent = listPanel
             secondComponent = editorPanel
             proportion = 0.3f
             dividerWidth = 3
+        }
+    }
+
+    private fun scriptsOf(scriptType: ScriptConfig.ScriptType): MutableList<ScriptConfig> =
+        scriptsByType.getValue(scriptType)
+
+    private fun createScriptListPanel(
+        scriptList: JBList<ScriptConfig>,
+        listModel: DefaultListModel<ScriptConfig>,
+        scripts: MutableList<ScriptConfig>,
+        scriptType: ScriptConfig.ScriptType
+    ): JComponent = ToolbarDecorator.createDecorator(scriptList)
+        .setAddAction {
+            val newScript = ScriptConfig(
+                id = System.nanoTime().toString(),
+                sshConfigId = existingConfig?.id ?: "",
+                name = "新脚本",
+                scriptType = scriptType,
+                shellType = if (scriptType.isLocal) availableShells.first() else ScriptConfig.ShellType.DEFAULT,
+                content = DEFAULT_SCRIPT_CONTENT,
+                enabled = true
+            )
+            scripts.add(newScript)
+            listModel.addElement(newScript)
+            scriptList.selectedIndex = listModel.size() - 1
+        }
+        .setRemoveAction {
+            val selectedIndex = scriptList.selectedIndex
+            if (selectedIndex >= 0) {
+                scripts.removeAt(selectedIndex)
+                listModel.remove(selectedIndex)
+                if (listModel.size() > 0) {
+                    scriptList.selectedIndex = minOf(selectedIndex, listModel.size() - 1)
+                }
+            }
+        }
+        .disableUpDownActions()
+        .setPreferredSize(Dimension(150, 240))
+        .createPanel()
+
+    private fun createScriptEditorArea(
+        nameField: JBTextField,
+        editor: MultiLanguageTextField,
+        shellCombo: JComboBox<ScriptConfig.ShellType>?
+    ): JComponent = JPanel(BorderLayout(0, 4)).apply {
+        add(JPanel(BorderLayout(6, 0)).apply {
+            add(JBLabel("名称:"), BorderLayout.WEST)
+            add(nameField, BorderLayout.CENTER)
+            shellCombo?.let { combo ->
+                add(JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 4, 0)).apply {
+                    add(JBLabel("Shell:"))
+                    add(combo)
+                }, BorderLayout.EAST)
+            }
+        }, BorderLayout.NORTH)
+        add(editor.apply {
+            preferredSize = Dimension(350, 240)
+            minimumSize = Dimension(200, 120)
+        }, BorderLayout.CENTER)
+    }
+
+    private fun bindScriptSelection(
+        scriptList: JBList<ScriptConfig>,
+        scripts: List<ScriptConfig>,
+        nameField: JBTextField,
+        editor: MultiLanguageTextField,
+        shellCombo: JComboBox<ScriptConfig.ShellType>?
+    ) {
+        scriptList.addListSelectionListener { e ->
+            if (e.valueIsAdjusting) return@addListSelectionListener
+            val script = scripts.getOrNull(scriptList.selectedIndex) ?: return@addListSelectionListener
+            nameField.text = script.name
+            editor.text = script.content
+            shellCombo?.selectedItem = script.shellType
+        }
+    }
+
+    private fun bindScriptContent(
+        scriptList: JBList<ScriptConfig>,
+        scripts: MutableList<ScriptConfig>,
+        editor: MultiLanguageTextField
+    ) {
+        editor.document.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
+            override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
+                val index = scriptList.selectedIndex
+                if (index in scripts.indices) {
+                    scripts[index] = scripts[index].copy(content = editor.text)
+                }
+            }
+        })
+    }
+
+    private fun bindScriptName(
+        scriptList: JBList<ScriptConfig>,
+        scripts: MutableList<ScriptConfig>,
+        listModel: DefaultListModel<ScriptConfig>,
+        nameField: JBTextField
+    ) {
+        nameField.document.addDocumentListener(object : javax.swing.event.DocumentListener {
+            override fun insertUpdate(e: javax.swing.event.DocumentEvent?) = updateName()
+            override fun removeUpdate(e: javax.swing.event.DocumentEvent?) = updateName()
+            override fun changedUpdate(e: javax.swing.event.DocumentEvent?) = updateName()
+
+            private fun updateName() {
+                val index = scriptList.selectedIndex
+                if (index in scripts.indices) {
+                    scripts[index] = scripts[index].copy(name = nameField.text)
+                    listModel.setElementAt(scripts[index], index)
+                }
+            }
+        })
+    }
+
+    private fun bindScriptShellType(
+        scriptList: JBList<ScriptConfig>,
+        scripts: MutableList<ScriptConfig>,
+        shellCombo: JComboBox<ScriptConfig.ShellType>
+    ) {
+        shellCombo.addActionListener {
+            val index = scriptList.selectedIndex
+            val selected = shellCombo.selectedItem as? ScriptConfig.ShellType ?: return@addActionListener
+            if (index in scripts.indices) {
+                scripts[index] = scripts[index].copy(shellType = selected)
+            }
         }
     }
 
@@ -780,15 +813,16 @@ class AddItemDialog(
             }
         }
 
-        preScripts.forEach {
-            SshConfigService.addScript(it.copy(sshConfigId = config.id))
-        }
-        postScripts.forEach {
-            SshConfigService.addScript(it.copy(sshConfigId = config.id))
+        scriptsByType.values.forEach { group ->
+            group.forEach { SshConfigService.addScript(it.copy(sshConfigId = config.id)) }
         }
 
         onSaved?.invoke()
         super.doOKAction()
+    }
+
+    private companion object {
+        const val DEFAULT_SCRIPT_CONTENT = "#!/bin/bash\n"
     }
 }
 

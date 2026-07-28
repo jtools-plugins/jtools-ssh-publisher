@@ -25,6 +25,8 @@ data class TransferTask(
     val tempLocalPostScript: String = "",
     /** 临时本地后置脚本使用的 Shell 类型 */
     val tempLocalPostShellType: ScriptConfig.ShellType = ScriptConfig.ShellType.DEFAULT,
+    /** 本地脚本执行时的工作目录（当前项目根目录），为空时由执行器报错 */
+    val localWorkDir: String? = null,
     var status: TaskStatus = TaskStatus.PENDING,
     var progress: Int = 0,
     var message: String = "等待中",

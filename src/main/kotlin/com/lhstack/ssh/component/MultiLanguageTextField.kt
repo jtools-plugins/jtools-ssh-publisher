@@ -9,6 +9,7 @@ import com.intellij.openapi.fileTypes.LanguageFileType
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.ui.LanguageTextField
+import javax.swing.ScrollPaneConstants
 
 class MultiLanguageTextField(
     private var languageFileType: LanguageFileType,
@@ -60,6 +61,9 @@ class MultiLanguageTextField(
 //            }
         }
         editorEx.setBorder(null)
+        // 编辑器默认常驻纵向滚动条（含错误条纹区），嵌入表单时改为溢出才显示
+        editorEx.setHorizontalScrollbarVisible(false)
+        editorEx.scrollPane.verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
         val settings = editorEx.settings
         settings.additionalLinesCount = 0
         settings.additionalColumnsCount = 1
