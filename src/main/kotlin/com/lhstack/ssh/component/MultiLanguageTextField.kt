@@ -9,6 +9,7 @@ import com.intellij.openapi.fileTypes.LanguageFileType
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.ui.LanguageTextField
+import javax.swing.ScrollPaneConstants
 
 class MultiLanguageTextField(
     private var languageFileType: LanguageFileType,
@@ -22,13 +23,26 @@ class MultiLanguageTextField(
 
     private val documentCreator = SimpleDocumentCreator()
 
-
     init {
         border = null
     }
 
     override fun dispose() {
         editor?.let { EditorFactory.getInstance().releaseEditor(it) }
+    }
+
+    fun changeLanguageFieType(languageFileType: LanguageFileType) {
+        if (this.languageFileType !== languageFileType) {
+            this.setNewDocumentAndFileType(
+                languageFileType,
+                this.documentCreator.createDocument(this.document.text, languageFileType.language, this.project)
+            )
+            this.languageFileType = languageFileType
+            val editor = this.editor
+            if (editor is EditorEx) {
+                editor.highlighter = HighlighterFactory.createHighlighter(this.project, this.languageFileType)
+            }
+        }
     }
 
     override fun createEditor(): EditorEx {
@@ -47,6 +61,9 @@ class MultiLanguageTextField(
 //            }
         }
         editorEx.setBorder(null)
+        // 编辑器默认常驻纵向滚动条（含错误条纹区），嵌入表单时改为溢出才显示
+        editorEx.setHorizontalScrollbarVisible(false)
+        editorEx.scrollPane.verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
         val settings = editorEx.settings
         settings.additionalLinesCount = 0
         settings.additionalColumnsCount = 1

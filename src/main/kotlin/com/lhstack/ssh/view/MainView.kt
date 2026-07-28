@@ -21,6 +21,7 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.treeStructure.Tree
 import com.lhstack.ssh.PluginIcons
 import com.lhstack.ssh.model.SshConfig
+import com.lhstack.ssh.model.SshGroup
 import com.lhstack.ssh.service.ConfigExportImportService
 import com.lhstack.ssh.service.SshConfigService
 import com.lhstack.ssh.service.TransferTaskManager
@@ -52,7 +53,9 @@ class MainView(
 
     private val terminalTabs = DockableTabPanel(parentDisposable)
     private val leftTabs = com.intellij.ui.components.JBTabbedPane(JTabbedPane.TOP)
-    private val splitPane = JBSplitter(true, DEFAULT_TOP_PANEL_PROPORTION)
+    private val splitPane = JBSplitter(true, DEFAULT_TOP_PANEL_PROPORTION).apply {
+        dividerWidth = DEFAULT_DIVIDER_WIDTH
+    }
     private val topPanelCollapseState = MainViewCollapseState(
         defaultExpandedProportion = DEFAULT_TOP_PANEL_PROPORTION,
         collapsedProportion = COLLAPSED_TOP_PANEL_PROPORTION
@@ -62,6 +65,7 @@ class MainView(
     private lateinit var topPanelToggleToolbar: ActionToolbar
     private lateinit var transferTaskPanel: TransferTaskPanel
     private lateinit var uploadTemplatePanel: UploadTemplatePanel
+    private lateinit var ansibleRunnerPanel: AnsibleRunnerPanel
     private val toggleTopPanelAction = object : AnAction() {
         override fun actionPerformed(e: AnActionEvent) {
             toggleTopPanelCollapsed()
@@ -86,6 +90,7 @@ class MainView(
         initTree()
         initTransferTaskPanel()
         initUploadTemplatePanel()
+        initAnsibleRunnerPanel()
         initActionToolbar()
         initSplitPane()
         refreshTree()
@@ -100,11 +105,32 @@ class MainView(
         uploadTemplatePanel = UploadTemplatePanel(project)
     }
 
+    private fun initAnsibleRunnerPanel() {
+        ansibleRunnerPanel = AnsibleRunnerPanel(project)
+    }
+
     private fun initSplitPane() {
-        // 左侧Tab：SSH连接 + 上传模板 + 传输管理
         leftTabs.addTab("SSH连接", PluginIcons.SshConnection, JBScrollPane(tree))
         leftTabs.addTab("上传模板", PluginIcons.UploadTemplate, uploadTemplatePanel)
         leftTabs.addTab("传输管理", PluginIcons.TransferManager, transferTaskPanel)
+        leftTabs.addTab("批量执行", PluginIcons.Script, ansibleRunnerPanel)
+
+        // 切换到“批量执行”时隐藏 terminal，占满全屏；切掉时恢复
+        leftTabs.addChangeListener {
+            val isAnsible = leftTabs.selectedIndex == 3
+            // 隐藏 terminal 后 Splitter.doLayout 会自动隐藏 divider，无需改动 dividerWidth。
+            terminalTabs.isVisible = !isAnsible
+            SwingUtilities.invokeLater {
+                splitPane.proportion = when {
+                    isAnsible -> 1.0f
+                    topPanelCollapseState.collapsed -> COLLAPSED_TOP_PANEL_PROPORTION
+                    else -> topPanelCollapseState.lastExpandedProportion
+                }
+                splitPane.revalidate()
+                splitPane.repaint()
+            }
+            if (isAnsible) ansibleRunnerPanel.refreshTree()
+        }
 
         initTopPanelContainer()
 
@@ -133,7 +159,6 @@ class MainView(
     private fun applyTopPanelState(targetProportion: Float) {
         topPanelContainer.isVisible = topPanelCollapseState.topPanelVisible
         topPanelContainer.minimumSize = Dimension(0, 0)
-        splitPane.dividerWidth = if (topPanelCollapseState.collapsed) 0 else DEFAULT_DIVIDER_WIDTH
         mainToolbar.updateActionsImmediately()
         topPanelToggleToolbar.updateActionsImmediately()
 
@@ -156,8 +181,14 @@ class MainView(
         tree = Tree(treeModel).apply {
             isRootVisible = false
             showsRootHandles = true
+            selectionModel.selectionMode = javax.swing.tree.TreeSelectionModel.DISCONTIGUOUS_TREE_SELECTION
         }
         TreeSpeedSearch(tree)
+        SshTreeDragHandler(
+            tree = tree,
+            onDropped = { refreshTree() }
+            // configExtractor / groupIdExtractor 使用默认值（SshConfig / SshGroup / String）
+        )
 
         tree.cellRenderer = object : ColoredTreeCellRenderer() {
             override fun customizeCellRenderer(
@@ -171,7 +202,11 @@ class MainView(
                         append(userObject.name, SimpleTextAttributes.REGULAR_ATTRIBUTES)
                         append("  ${userObject.host}:${userObject.port}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                     }
-
+                    is SshGroup -> {
+                        icon = PluginIcons.Folder
+                        append(userObject.name, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
+                        append("  (${node.childCount})", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                    }
                     is String -> {
                         icon = PluginIcons.Folder
                         append(userObject, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
@@ -199,7 +234,8 @@ class MainView(
 
                     when (node.userObject) {
                         is SshConfig -> showConfigContextMenu(e, node.userObject as SshConfig)
-                        is String -> showGroupContextMenu(e, node.userObject as String)
+                        is SshGroup -> showGroupContextMenu(e, node.userObject as SshGroup)
+                        is String -> showDefaultGroupContextMenu(e)
                     }
                 }
             }
@@ -232,23 +268,35 @@ class MainView(
 
     }
 
-    private fun showGroupContextMenu(e: MouseEvent, group: String) {
+    private fun showGroupContextMenu(e: MouseEvent, group: SshGroup) {
         JBPopupFactory.getInstance().createActionGroupPopup("操作", DefaultActionGroup().apply {
             this.add(AnActionFactory.create("新建配置到此分组", PluginIcons.Add){
-                AddItemDialog(project, null, group) { refreshTree() }.show()
+                AddItemDialog(project, null, group.name) { refreshTree() }.show()
             })
-
             this.add(AnActionFactory.create("重命名此分组", PluginIcons.Rename){
-                val newGroup =
-                    Messages.showInputDialog(project, "请输入新的分组名称", "重命名", PluginIcons.Rename)
-                if(newGroup?.isBlank() == true) {
+                val newName = Messages.showInputDialog(project, "请输入新的分组名称", "重命名", PluginIcons.Rename)
+                if (newName?.isBlank() == true) {
                     Notifications.Bus.notify(Notification("JToolsSshPublisher","新的分组名称不能为空", NotificationType.ERROR))
-                    return@create;
+                    return@create
                 }
-                newGroup?.let {
-                    SshConfigService.renameGroup(group,it)
-                    refreshTree()
-                }
+                newName?.let { SshConfigService.renameGroup(group.id, it); refreshTree() }
+            })
+            this.add(AnActionFactory.create("删除此分组", PluginIcons.Delete){
+                val result = Messages.showYesNoDialog(
+                    project,
+                    "删除分组 \"${group.name}\"？\n组内连接将归入\"默认\"，该分组的 Ansible 脚本将一并删除。",
+                    "确认删除分组", Messages.getWarningIcon()
+                )
+                if (result == Messages.YES) { SshConfigService.deleteGroup(group.id); refreshTree() }
+            })
+        }, DataContext.EMPTY_CONTEXT, JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false)
+            .show(RelativePoint(e.component, Point(e.x, e.y)))
+    }
+
+    private fun showDefaultGroupContextMenu(e: MouseEvent) {
+        JBPopupFactory.getInstance().createActionGroupPopup("操作", DefaultActionGroup().apply {
+            this.add(AnActionFactory.create("新建配置（未分组）", PluginIcons.Add){
+                AddItemDialog(project, null, null) { refreshTree() }.show()
             })
         }, DataContext.EMPTY_CONTEXT, JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false)
             .show(RelativePoint(e.component, Point(e.x, e.y)))
@@ -275,7 +323,7 @@ class MainView(
     }
 
     private fun editConfig(config: SshConfig) {
-        AddItemDialog(project, config, config.group) { refreshTree() }.show()
+        AddItemDialog(project, config, SshConfigService.getGroupById(config.groupId)?.name) { refreshTree() }.show()
     }
 
     private fun copyConfig(config: SshConfig) {
@@ -301,27 +349,42 @@ class MainView(
     }
 
     fun refreshTree() {
-        // 保存当前展开的组
+        // 保存当前展开的组（存 groupId 或 "默认"）
         val expandedGroups = mutableSetOf<String>()
         for (i in 0 until rootNode.childCount) {
             val groupNode = rootNode.getChildAt(i) as? DefaultMutableTreeNode
             if (groupNode != null) {
                 val path = javax.swing.tree.TreePath(arrayOf(rootNode, groupNode))
                 if (tree.isExpanded(path)) {
-                    expandedGroups.add(groupNode.userObject as String)
+                    when (val obj = groupNode.userObject) {
+                        is SshGroup -> expandedGroups.add(obj.id)
+                        is String -> expandedGroups.add(obj)
+                    }
                 }
             }
         }
 
         rootNode.removeAllChildren()
 
-        val configsByGroup = SshConfigService.getConfigsByGroup()
-        configsByGroup.toSortedMap().forEach { (group, configs) ->
+        val groups = SshConfigService.getGroups()
+        val configsByGroupId = SshConfigService.getConfigsByGroup()
+
+        // 有分组的
+        groups.sortedBy { it.name }.forEach { group ->
+            val configs = configsByGroupId[group.id] ?: emptyList()
             val groupNode = DefaultMutableTreeNode(group)
-            configs.sortedBy { it.name }.forEach { config ->
+            configs.sortedWith(compareBy({ it.sortOrder }, { it.name })).forEach { config ->
                 groupNode.add(DefaultMutableTreeNode(config))
             }
             rootNode.add(groupNode)
+        }
+
+        // 未分组（groupId 为空）归入"默认"
+        val ungrouped = configsByGroupId[""] ?: emptyList()
+        if (ungrouped.isNotEmpty()) {
+            val defaultNode = DefaultMutableTreeNode("默认")
+            ungrouped.sortedWith(compareBy({ it.sortOrder }, { it.name })).forEach { defaultNode.add(DefaultMutableTreeNode(it)) }
+            rootNode.add(defaultNode)
         }
 
         treeModel.reload()
@@ -329,9 +392,15 @@ class MainView(
         // 恢复之前展开的组
         for (i in 0 until rootNode.childCount) {
             val groupNode = rootNode.getChildAt(i) as? DefaultMutableTreeNode
-            if (groupNode != null && expandedGroups.contains(groupNode.userObject as String)) {
-                val path = javax.swing.tree.TreePath(arrayOf(rootNode, groupNode))
-                tree.expandPath(path)
+            if (groupNode != null) {
+                val key = when (val obj = groupNode.userObject) {
+                    is SshGroup -> obj.id
+                    is String -> obj
+                    else -> ""
+                }
+                if (expandedGroups.contains(key)) {
+                    tree.expandPath(javax.swing.tree.TreePath(arrayOf(rootNode, groupNode)))
+                }
             }
         }
     }
@@ -383,6 +452,26 @@ class MainView(
                         else -> e.presentation.isVisible = false
                     }
                     e.presentation.isVisible = leftTabs.selectedIndex in 0..1
+                }
+
+                override fun getActionUpdateThread() = ActionUpdateThread.BGT
+            })
+
+            add(object : AnAction({ "新建分组" }, PluginIcons.Folder) {
+                override fun actionPerformed(e: AnActionEvent) {
+                    val name = Messages.showInputDialog(
+                        project, "请输入分组名称", "新建分组", null
+                    )?.trim() ?: return
+                    if (name.isEmpty()) {
+                        Messages.showErrorDialog(project, "分组名称不能为空", "错误")
+                        return
+                    }
+                    SshConfigService.addGroup(com.lhstack.ssh.model.SshGroup(name = name))
+                    refreshTree()
+                }
+
+                override fun update(e: AnActionEvent) {
+                    e.presentation.isVisible = areTopPanelControlsVisible() && leftTabs.selectedIndex == 0
                 }
 
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT

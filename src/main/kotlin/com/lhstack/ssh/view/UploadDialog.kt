@@ -18,10 +18,14 @@ import com.intellij.ui.table.JBTable
 import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
 import com.lhstack.ssh.PluginIcons
+import com.lhstack.ssh.component.CollapsibleSection
 import com.lhstack.ssh.component.MultiLanguageTextField
+import com.lhstack.ssh.component.SCRIPT_EDITOR_HEIGHT
+import com.lhstack.ssh.component.verticalScrollPane
 import com.lhstack.ssh.model.ScriptConfig
 import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.model.TransferTask
+import com.lhstack.ssh.service.LocalShellDetector
 import com.lhstack.ssh.service.SshConfigService
 import com.lhstack.ssh.service.TransferTaskManager
 import java.awt.BorderLayout
@@ -49,39 +53,51 @@ class UploadDialog(
 
     private lateinit var tempPreScriptEditor: MultiLanguageTextField
     private lateinit var tempPostScriptEditor: MultiLanguageTextField
+    private lateinit var tempLocalPreScriptEditor: MultiLanguageTextField
+    private lateinit var tempLocalPostScriptEditor: MultiLanguageTextField
+    private lateinit var tempLocalPreShellCombo: JComboBox<ScriptConfig.ShellType>
+    private lateinit var tempLocalPostShellCombo: JComboBox<ScriptConfig.ShellType>
 
     private val shellFileType: LanguageFileType by lazy {
         FileTypeManager.getInstance().getFileTypeByExtension("sh") as? LanguageFileType
             ?: PlainTextFileType.INSTANCE
     }
 
+    /** 当前 OS 可用 Shell 列表，延迟初始化一次 */
+    private val availableShells: List<ScriptConfig.ShellType> by lazy {
+        LocalShellDetector.availableShells()
+    }
+
     init {
         title = "上传文件 - ${config.name} (${config.host})"
-        setSize(650, 550)
+        setSize(680, 760)
         setOKButtonText("添加任务")
         setCancelButtonText("关闭")
         loadScripts()
         init()
     }
 
+    /** 前置/后置表格各自同时装载远程脚本和本地脚本，执行位置由表格「位置」列区分。 */
     private fun loadScripts() {
-        // 默认不选中脚本
-        SshConfigService.getPreScripts(config.id).forEach {
-            preScriptsModel.addScript(it, false)
-        }
-        SshConfigService.getPostScripts(config.id).forEach {
-            postScriptsModel.addScript(it, false)
-        }
+        (SshConfigService.getPreScripts(config.id) + SshConfigService.getLocalPreScripts(config.id))
+            .forEach { preScriptsModel.addScript(it, false) }
+        (SshConfigService.getPostScripts(config.id) + SshConfigService.getLocalPostScripts(config.id))
+            .forEach { postScriptsModel.addScript(it, false) }
     }
 
     override fun createCenterPanel(): JComponent {
-        // 创建Shell编辑器
         tempPreScriptEditor = MultiLanguageTextField(shellFileType, project, "", isLineNumbersShown = true)
         tempPostScriptEditor = MultiLanguageTextField(shellFileType, project, "", isLineNumbersShown = true)
+        tempLocalPreScriptEditor = MultiLanguageTextField(shellFileType, project, "", isLineNumbersShown = true)
+        tempLocalPostScriptEditor = MultiLanguageTextField(shellFileType, project, "", isLineNumbersShown = true)
         Disposer.register(disposable, tempPreScriptEditor)
         Disposer.register(disposable, tempPostScriptEditor)
+        Disposer.register(disposable, tempLocalPreScriptEditor)
+        Disposer.register(disposable, tempLocalPostScriptEditor)
 
-        // 文件选择面板
+        tempLocalPreShellCombo  = buildShellCombo(availableShells)
+        tempLocalPostShellCombo = buildShellCombo(availableShells)
+
         val filePanel = FormBuilder.createFormBuilder()
             .addLabeledComponent(JBLabel("本地文件:"), JPanel(BorderLayout(5, 0)).apply {
                 add(localFileField, BorderLayout.CENTER)
@@ -90,7 +106,6 @@ class UploadDialog(
                         val descriptor = FileChooserDescriptorFactory.createSingleFileDescriptor()
                         FileChooser.chooseFile(descriptor, project, null)?.let { vf ->
                             localFileField.text = vf.path
-                            // 自动填充远程文件名（用户可修改）
                             if (remoteFileNameField.text.isEmpty()) {
                                 remoteFileNameField.text = vf.name
                             }
@@ -104,10 +119,15 @@ class UploadDialog(
             })
             .panel
 
-        // 脚本选择Tab
         val scriptTabs = JBTabbedPane().apply {
-            addTab("前置脚本", createScriptSelectPanel(preScriptsTable, tempPreScriptEditor, "上传前执行"))
-            addTab("后置脚本", createScriptSelectPanel(postScriptsTable, tempPostScriptEditor, "上传后执行"))
+            addTab("前置脚本", createScriptPanel(
+                preScriptsTable, tempPreScriptEditor,
+                tempLocalPreScriptEditor, tempLocalPreShellCombo, "上传前执行"
+            ))
+            addTab("后置脚本", createScriptPanel(
+                postScriptsTable, tempPostScriptEditor,
+                tempLocalPostScriptEditor, tempLocalPostShellCombo, "上传后执行"
+            ))
         }
 
         return JPanel(BorderLayout(0, 10)).apply {
@@ -117,85 +137,78 @@ class UploadDialog(
         }
     }
 
-    private fun createScriptSelectPanel(
+    /**
+     * 单个 Tab 内容：三个可折叠区块（服务器脚本 / 远程临时脚本 / 本地临时脚本），
+     * 整体套纵向滚动条，编辑器高度固定，弹窗高度不受影响。
+     */
+    private fun createScriptPanel(
         table: JBTable,
-        tempEditor: MultiLanguageTextField,
-        tempLabel: String
+        remoteEditor: MultiLanguageTextField,
+        localEditor: MultiLanguageTextField,
+        shellCombo: JComboBox<ScriptConfig.ShellType>,
+        label: String
     ): JComponent {
         table.setShowGrid(false)
         table.tableHeader.reorderingAllowed = false
         table.rowHeight = 24
-        
-        // 调整列宽：选择列固定宽度，名称列适当宽度，内容预览列自动填充
-        table.columnModel.getColumn(0).apply {
-            preferredWidth = 40
-            maxWidth = 40
-            minWidth = 40
-        }
-        table.columnModel.getColumn(1).apply {
-            preferredWidth = 150
-            minWidth = 100
-        }
-        // 第三列（内容预览）自动填充剩余空间
+        table.columnModel.getColumn(0).apply { preferredWidth = 40; maxWidth = 40; minWidth = 40 }
+        table.columnModel.getColumn(1).apply { preferredWidth = 150; minWidth = 100 }
+        table.columnModel.getColumn(2).apply { preferredWidth = 60; maxWidth = 60; minWidth = 60 }
         table.autoResizeMode = JTable.AUTO_RESIZE_LAST_COLUMN
 
         val tablePanel = ToolbarDecorator.createDecorator(table)
-            .disableAddAction()
-            .disableRemoveAction()
-            .createPanel().apply {
-                preferredSize = Dimension(600, 120)
-            }
+            .disableAddAction().disableRemoveAction()
+            .createPanel().apply { preferredSize = Dimension(600, 120) }
 
-        val tempPanel = JPanel(BorderLayout(0, 5)).apply {
-            add(JBLabel("临时脚本 ($tempLabel，不保存):"), BorderLayout.NORTH)
-            add(tempEditor.apply { preferredSize = Dimension(600, 100) }, BorderLayout.CENTER)
-        }
+        remoteEditor.preferredSize = Dimension(600, SCRIPT_EDITOR_HEIGHT)
+        localEditor.preferredSize = Dimension(600, SCRIPT_EDITOR_HEIGHT)
 
-        return JPanel(BorderLayout(0, 10)).apply {
-            add(tablePanel, BorderLayout.NORTH)
-            add(tempPanel, BorderLayout.CENTER)
-        }
+        return verticalScrollPane(
+            CollapsibleSection("已保存脚本（可选）", tablePanel),
+            CollapsibleSection("临时脚本（$label，远程执行，不保存）", remoteEditor),
+            CollapsibleSection("本地临时脚本（$label，本机执行，不保存）", localEditor, trailing = shellCombo)
+        )
     }
 
     override fun doOKAction() {
-        val localPath = localFileField.text.trim()
+        val localPath  = localFileField.text.trim()
         val remotePath = remotePathField.text.trim()
 
         if (localPath.isEmpty()) {
             Messages.showErrorDialog(project, "请选择本地文件", "错误")
             return
         }
-
         val localFile = File(localPath)
         if (!localFile.exists()) {
             Messages.showErrorDialog(project, "本地文件不存在", "错误")
             return
         }
-
         if (remotePath.isEmpty()) {
             Messages.showErrorDialog(project, "请输入远程路径", "错误")
             return
         }
 
-        // 使用自定义文件名或原文件名
         val remoteFileName = remoteFileNameField.text.trim().ifEmpty { localFile.name }
-        val fullRemotePath = if (remotePath.endsWith("/")) {
-            remotePath + remoteFileName
-        } else {
-            "$remotePath/$remoteFileName"
-        }
+        val fullRemotePath = if (remotePath.endsWith("/")) remotePath + remoteFileName
+                            else "$remotePath/$remoteFileName"
 
-        // 创建上传任务
         val task = TransferTask(
-            type = TransferTask.TransferType.UPLOAD,
-            localFile = localFile,
-            remotePath = fullRemotePath,
-            config = config,
-            fileSize = localFile.length(),
-            preScripts = preScriptsModel.getSelectedScripts(),
-            postScripts = postScriptsModel.getSelectedScripts(),
-            tempPreScript = tempPreScriptEditor.text.trim(),
-            tempPostScript = tempPostScriptEditor.text.trim()
+            type            = TransferTask.TransferType.UPLOAD,
+            localFile       = localFile,
+            remotePath      = fullRemotePath,
+            config          = config,
+            fileSize        = localFile.length(),
+            preScripts      = preScriptsModel.getSelectedScripts(),
+            postScripts     = postScriptsModel.getSelectedScripts(),
+            tempPreScript   = tempPreScriptEditor.text.trim(),
+            tempPostScript  = tempPostScriptEditor.text.trim(),
+            tempLocalPreScript    = tempLocalPreScriptEditor.text.trim(),
+            tempLocalPreShellType = tempLocalPreShellCombo.selectedItem as? ScriptConfig.ShellType
+                ?: ScriptConfig.ShellType.DEFAULT,
+            tempLocalPostScript    = tempLocalPostScriptEditor.text.trim(),
+            tempLocalPostShellType = tempLocalPostShellCombo.selectedItem as? ScriptConfig.ShellType
+                ?: ScriptConfig.ShellType.DEFAULT,
+            localWorkDir = project.basePath
         )
 
         TransferTaskManager.addTask(task)
@@ -208,6 +221,29 @@ class UploadDialog(
     }
 }
 
+// ---------------------------------------------------------------------------
+// 工具函数：构建 Shell 下拉框
+// ---------------------------------------------------------------------------
+
+/** 根据当前 OS 检测可用 Shell，创建带 label 渲染的 JComboBox。 */
+fun buildShellCombo(shells: List<ScriptConfig.ShellType>): JComboBox<ScriptConfig.ShellType> {
+    val combo = JComboBox<ScriptConfig.ShellType>()
+    shells.forEach { combo.addItem(it) }
+    combo.renderer = object : DefaultListCellRenderer() {
+        override fun getListCellRendererComponent(
+            list: JList<*>?, value: Any?, index: Int,
+            isSelected: Boolean, cellHasFocus: Boolean
+        ): java.awt.Component {
+            super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
+            text = (value as? ScriptConfig.ShellType)?.label ?: ""
+            return this
+        }
+    }
+    return combo
+}
+
+// ---------------------------------------------------------------------------
+
 /**
  * 上传脚本表格模型
  */
@@ -215,7 +251,7 @@ class UploadScriptTableModel : AbstractTableModel() {
     private data class ScriptItem(val script: ScriptConfig, var selected: Boolean)
 
     private val items = mutableListOf<ScriptItem>()
-    private val columns = arrayOf("选择", "名称", "内容预览")
+    private val columns = arrayOf("选择", "名称", "位置", "内容预览")
 
     override fun getRowCount() = items.size
     override fun getColumnCount() = columns.size
@@ -232,7 +268,8 @@ class UploadScriptTableModel : AbstractTableModel() {
         return when (columnIndex) {
             0 -> item.selected
             1 -> item.script.name
-            2 -> item.script.content.replace("\n", " ").take(60)
+            2 -> if (item.script.scriptType.isLocal) "本机" else "服务器"
+            3 -> item.script.content.replace("\n", " ").take(60)
             else -> ""
         }
     }

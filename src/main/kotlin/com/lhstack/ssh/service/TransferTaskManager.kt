@@ -1,5 +1,6 @@
 package com.lhstack.ssh.service
 
+import com.lhstack.ssh.model.ScriptConfig
 import com.lhstack.ssh.model.TransferTask
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -283,31 +284,39 @@ object TransferTaskManager {
         for (script in task.preScripts) {
             if (task.status == TransferTask.TaskStatus.STOPPED) return
             if (script.content.isNotEmpty()) {
-                updateTask(task) {
-                    message = "执行前置脚本: ${script.name}"
-                    addLog("执行前置脚本: ${script.name}")
-                }
+                val label = if (script.scriptType.isLocal) "本地前置脚本" else "前置脚本"
+                updateTask(task) { message = "执行$label: ${script.name}"; addLog("执行$label: ${script.name}") }
                 try {
-                    val result = manager.executeCommand(script.content)
+                    val result = if (script.scriptType.isLocal) LocalScriptExecutor.execute(script, task.localWorkDir!!)
+                                 else manager.executeCommand(script.content)
                     if (result.isNotBlank()) task.addLog(result)
                 } catch (e: Exception) {
                     task.addLog("✗ 脚本执行失败: ${e.message}")
                 }
             }
         }
-
-        // 执行临时前置脚本
+        // 执行临时本地前置脚本
+        if (task.tempLocalPreScript.isNotEmpty() && task.status != TransferTask.TaskStatus.STOPPED) {
+            updateTask(task) { message = "执行临时本地前置脚本"; addLog("执行临时本地前置脚本") }
+            try {
+                val result = LocalScriptExecutor.execute(
+                    com.lhstack.ssh.model.ScriptConfig(
+                        content = task.tempLocalPreScript,
+                        scriptType = com.lhstack.ssh.model.ScriptConfig.ScriptType.LOCAL_PRE,
+                        shellType = task.tempLocalPreShellType
+                    ),
+                    task.localWorkDir!!
+                )
+                if (result.isNotBlank()) task.addLog(result)
+            } catch (e: Exception) { task.addLog("✗ 本地脚本执行失败: ${e.message}") }
+        }
+        // 执行临时远程前置脚本
         if (task.tempPreScript.isNotEmpty() && task.status != TransferTask.TaskStatus.STOPPED) {
-            updateTask(task) {
-                message = "执行临时前置脚本"
-                addLog("执行临时前置脚本")
-            }
+            updateTask(task) { message = "执行临时前置脚本"; addLog("执行临时前置脚本") }
             try {
                 val result = manager.executeCommand(task.tempPreScript)
                 if (result.isNotBlank()) task.addLog(result)
-            } catch (e: Exception) {
-                task.addLog("✗ 脚本执行失败: ${e.message}")
-            }
+            } catch (e: Exception) { task.addLog("✗ 脚本执行失败: ${e.message}") }
         }
     }
 
@@ -315,31 +324,39 @@ object TransferTaskManager {
         for (script in task.postScripts) {
             if (task.status == TransferTask.TaskStatus.STOPPED) return
             if (script.content.isNotEmpty()) {
-                updateTask(task) {
-                    message = "执行后置脚本: ${script.name}"
-                    addLog("执行后置脚本: ${script.name}")
-                }
+                val label = if (script.scriptType.isLocal) "本地后置脚本" else "后置脚本"
+                updateTask(task) { message = "执行$label: ${script.name}"; addLog("执行$label: ${script.name}") }
                 try {
-                    val result = manager.executeCommand(script.content)
+                    val result = if (script.scriptType.isLocal) LocalScriptExecutor.execute(script, task.localWorkDir!!)
+                                 else manager.executeCommand(script.content)
                     if (result.isNotBlank()) task.addLog(result)
                 } catch (e: Exception) {
                     task.addLog("✗ 脚本执行失败: ${e.message}")
                 }
             }
         }
-
-        // 执行临时后置脚本
+        // 执行临时远程后置脚本
         if (task.tempPostScript.isNotEmpty() && task.status != TransferTask.TaskStatus.STOPPED) {
-            updateTask(task) {
-                message = "执行临时后置脚本"
-                addLog("执行临时后置脚本")
-            }
+            updateTask(task) { message = "执行临时后置脚本"; addLog("执行临时后置脚本") }
             try {
                 val result = manager.executeCommand(task.tempPostScript)
                 if (result.isNotBlank()) task.addLog(result)
-            } catch (e: Exception) {
-                task.addLog("✗ 脚本执行失败: ${e.message}")
-            }
+            } catch (e: Exception) { task.addLog("✗ 脚本执行失败: ${e.message}") }
+        }
+        // 执行临时本地后置脚本
+        if (task.tempLocalPostScript.isNotEmpty() && task.status != TransferTask.TaskStatus.STOPPED) {
+            updateTask(task) { message = "执行临时本地后置脚本"; addLog("执行临时本地后置脚本") }
+            try {
+                val result = LocalScriptExecutor.execute(
+                    com.lhstack.ssh.model.ScriptConfig(
+                        content = task.tempLocalPostScript,
+                        scriptType = com.lhstack.ssh.model.ScriptConfig.ScriptType.LOCAL_POST,
+                        shellType = task.tempLocalPostShellType
+                    ),
+                    task.localWorkDir!!
+                )
+                if (result.isNotBlank()) task.addLog(result)
+            } catch (e: Exception) { task.addLog("✗ 本地脚本执行失败: ${e.message}") }
         }
     }
 

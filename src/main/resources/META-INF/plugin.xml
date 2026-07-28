@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.lhstack.ssh-publisher</id>
     <name>JTools SSH Publisher</name>
-    <version>1.2.6</version>
+    <version>1.2.7</version>
     <vendor email="lhstack@foxmail.com" url="https://github.com/lhstack">lhstack</vendor>
 
     <description><![CDATA[
@@ -22,10 +22,15 @@
         <li><b>Jump host chain support / 支持跳板链连接</b></li>
         <li><b>Native context action popup with icons & search / 原生右键动作弹窗，支持图标与搜索</b></li>
         <li><b>Right-click add to group & rename group / 支持分组右键新建配置与重命名</b></li>
+        <li><b>Standalone group table, delete group keeps connections under "default" / 独立分组表，删除分组后连接归入"默认"</b></li>
+        <li><b>Drag to reorder connections across groups / 支持拖拽调整连接顺序并跨分组移动</b></li>
         <li><b>Reveal and copy passwords/passphrases, then restore masked input / 支持查看并复制密码、私钥密码原文，关闭后恢复掩码</b></li>
         <li>Connection testing / 连接测试</li>
         <li>Heartbeat keep-alive / 心跳保活</li>
         <li><b>Pre/Post scripts with list+editor UI / 前置/后置脚本（列表+编辑器方式）</b></li>
+        <li><b>Four script types: remote pre/post via SSH, local pre/post on this machine / 四种脚本类型：远程前置、远程后置、本地前置、本地后置</b></li>
+        <li><b>Local scripts pick a shell, auto-detected per OS / 本地脚本可指定 Shell，按操作系统自动探测</b></li>
+        <li><b>Collapsible script section in the config dialog / 配置弹窗脚本区域可折叠</b></li>
         <li><b>Non-modal edit dialog / 非模态编辑对话框</b></li>
         <li><b>Improved form alignment in SSH edit dialog / 优化 SSH 编辑对话框表单对齐</b></li>
     </ul>
@@ -88,8 +93,9 @@
         <li><b>Multi-file upload to multiple servers / 多文件上传到多台服务器</b></li>
         <li><b>Independent config per file (server, path, scripts) / 每个文件独立配置</b></li>
         <li>Upload queue management / 上传队列管理</li>
-        <li>Pre/Post scripts / 前置/后置脚本</li>
+        <li>Pre/Post scripts, remote via SSH or local on this machine / 前置/后置脚本，支持远程执行和本机执行</li>
         <li>Temporary scripts / 临时脚本</li>
+        <li><b>Local scripts run with working directory fixed to the current project root / 本地脚本工作目录固定为当前项目根目录</b></li>
         <li>Custom remote filename / 自定义远程文件名</li>
     </ul>
 
@@ -100,11 +106,23 @@
         <li><b>Right-click add to group & rename template group / 支持模板分组右键新建与重命名</b></li>
         <li>Configure local file, server, remote path / 配置本地文件、服务器、远程路径</li>
         <li>Custom remote filename / 自定义远程文件名</li>
-        <li><b>Select server scripts or write temp scripts / 选择服务器脚本或临时脚本</b></li>
+        <li><b>Select saved remote/local scripts or write temp scripts / 选择已保存的远程、本地脚本或临时脚本</b></li>
+        <li><b>Local scripts run with working directory fixed to the current project root / 本地脚本工作目录固定为当前项目根目录</b></li>
         <li><b>Double-click to execute / 双击执行</b></li>
         <li><b>Multi-select batch execution / 多选批量执行</b></li>
         <li>Copy, edit, delete templates / 复制、编辑、删除模板</li>
         <li><b>Export/Import includes templates / 导出导入包含模板</b></li>
+    </ul>
+
+    <h4>Batch Execution / 批量执行</h4>
+    <ul>
+        <li><b>Run scripts on multiple servers concurrently by group / 按分组勾选多台服务器并发执行脚本</b></li>
+        <li><b>Independent result tab per server / 每台服务器独立结果 Tab</b></li>
+        <li><b>Group-level saved scripts with reorder / 分组级已保存脚本，支持上下排序</b></li>
+        <li><b>Multi-select saved scripts run in order / 多选已保存脚本按顺序执行</b></li>
+        <li><b>Live script editor with shell highlighting / 实时脚本编辑器带 Shell 语法高亮</b></li>
+        <li><b>Live script runs before or after saved scripts / 实时脚本可选在已保存脚本之前或之后执行</b></li>
+        <li>Select all / invert, stop, clear results / 全选、反选、停止、清空结果</li>
     </ul>
 
     <h4>Config Management / 配置管理</h4>
@@ -122,6 +140,24 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>1.2.7</b>
+    <ul>
+        <li>新增：批量执行面板，按分组勾选多台服务器并发执行脚本，每台服务器独立结果 Tab，支持全选/反选、停止和清空结果</li>
+        <li>新增：批量执行支持分组级已保存脚本，可新建、编辑、删除和上下排序，多选后按顺序依次执行</li>
+        <li>新增：批量执行的实时脚本编辑器带 Shell 语法高亮，可选择在已保存脚本之前或之后执行</li>
+        <li>新增：本地脚本体系，SSH 配置的脚本类型扩展为远程前置/远程后置/本地前置/本地后置，本地脚本通过 ProcessBuilder 在本机执行</li>
+        <li>新增：本地脚本可指定 Shell，按当前操作系统自动探测可用 Shell（Windows 读 PATH 判断 PowerShell，macOS/Linux 读 /etc/shells）</li>
+        <li>新增：本地前置/后置脚本的工作目录固定为当前项目根目录，脚本内相对路径以项目根目录为基准；覆盖右键上传、批量上传、模板单次执行、模板多选批量执行四个入口</li>
+        <li>新增：SSH 分组改为独立分组表，支持重命名和删除分组，删除时组内连接归入“默认”、该分组的批量执行脚本级联删除</li>
+        <li>新增：SSH 连接树支持拖拽调整顺序，可拖到分组内末尾或插到指定连接前后并自动切换分组</li>
+        <li>优化：SSH 配置、右键上传、批量上传、上传模板的脚本区域改为可折叠区块，长表单不再被脚本编辑器挤占</li>
+        <li>修复：右键上传弹窗、批量上传、上传模板的脚本列表只加载远程前置/后置脚本，已保存的本地前置/后置脚本无法勾选的问题</li>
+        <li>新增：脚本选择表格增加“位置”列，区分本机执行与服务器执行</li>
+        <li>修复：切换到批量执行 Tab 时把分割线宽度设为 0 触发 IllegalArgumentException 导致面板加载失败的问题</li>
+        <li>修复：批量执行面板三条分割线因子组件最小尺寸限制几乎无法拖动的问题</li>
+        <li>修复：工作目录不可用时显式报错，不再静默使用 IDE 进程目录</li>
+    </ul>
+
     <b>1.2.6</b>
     <ul>
         <li>修复：SSH 配置与跳板机勾选“显示原文”后，密码和私钥密码无法通过 Ctrl/Cmd + C 快捷键复制的问题</li>

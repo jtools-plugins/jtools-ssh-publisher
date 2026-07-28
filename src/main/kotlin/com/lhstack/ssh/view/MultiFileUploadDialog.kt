@@ -21,7 +21,12 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.ui.table.JBTable
 import com.intellij.util.ui.JBUI
 import com.lhstack.ssh.PluginIcons
+import com.lhstack.ssh.component.CollapsibleSection
 import com.lhstack.ssh.component.MultiLanguageTextField
+import com.lhstack.ssh.component.SCRIPT_EDITOR_HEIGHT
+import com.lhstack.ssh.component.SERVER_SECTION_HEIGHT
+import com.lhstack.ssh.component.verticalScrollPane
+import com.lhstack.ssh.component.verticalStack
 import com.lhstack.ssh.model.ScriptConfig
 import com.lhstack.ssh.model.SshConfig
 import com.lhstack.ssh.model.TransferTask
@@ -160,8 +165,10 @@ class MultiFileUploadDialog(
                     
                     // 初始化每个服务器的脚本选择
                     allServers.forEach { server ->
-                        val preScripts = SshConfigService.getPreScripts(server.id)
-                        val postScripts = SshConfigService.getPostScripts(server.id)
+                        val preScripts = SshConfigService.getPreScripts(server.id) +
+                                SshConfigService.getLocalPreScripts(server.id)
+                        val postScripts = SshConfigService.getPostScripts(server.id) +
+                                SshConfigService.getLocalPostScripts(server.id)
                         config.serverScriptSelections[server.id] = ServerScriptConfig(
                             preScripts = preScripts.map { ScriptSelection(it, false) }.toMutableList(),
                             postScripts = postScripts.map { ScriptSelection(it, false) }.toMutableList()
@@ -252,10 +259,21 @@ class MultiFileUploadDialog(
         scriptCardLayout.show(scriptCardPanel, "empty")
         
         // 临时脚本编辑器
+        val availableShells = com.lhstack.ssh.service.LocalShellDetector.availableShells()
         val tempPreScriptEditor = MultiLanguageTextField(shellFileType, project, config.tempPreScript, isLineNumbersShown = true)
         val tempPostScriptEditor = MultiLanguageTextField(shellFileType, project, config.tempPostScript, isLineNumbersShown = true)
+        val tempLocalPreScriptEditor = MultiLanguageTextField(shellFileType, project, config.tempLocalPreScript, isLineNumbersShown = true)
+        val tempLocalPostScriptEditor = MultiLanguageTextField(shellFileType, project, config.tempLocalPostScript, isLineNumbersShown = true)
+        val tempLocalPreShellCombo  = buildShellCombo(availableShells).also { combo ->
+            combo.selectedItem = config.tempLocalPreShellType
+        }
+        val tempLocalPostShellCombo = buildShellCombo(availableShells).also { combo ->
+            combo.selectedItem = config.tempLocalPostShellType
+        }
         Disposer.register(disposable, tempPreScriptEditor)
         Disposer.register(disposable, tempPostScriptEditor)
+        Disposer.register(disposable, tempLocalPreScriptEditor)
+        Disposer.register(disposable, tempLocalPostScriptEditor)
         
         // 监听变化
         remotePathField.document.addDocumentListener(object : javax.swing.event.DocumentListener {
@@ -286,6 +304,27 @@ class MultiFileUploadDialog(
                 config.tempPostScript = tempPostScriptEditor.text
             }
         })
+
+        tempLocalPreScriptEditor.document.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
+            override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
+                config.tempLocalPreScript = tempLocalPreScriptEditor.text
+            }
+        })
+
+        tempLocalPostScriptEditor.document.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
+            override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
+                config.tempLocalPostScript = tempLocalPostScriptEditor.text
+            }
+        })
+
+        tempLocalPreShellCombo.addActionListener {
+            config.tempLocalPreShellType = tempLocalPreShellCombo.selectedItem as? com.lhstack.ssh.model.ScriptConfig.ShellType
+                ?: com.lhstack.ssh.model.ScriptConfig.ShellType.DEFAULT
+        }
+        tempLocalPostShellCombo.addActionListener {
+            config.tempLocalPostShellType = tempLocalPostShellCombo.selectedItem as? com.lhstack.ssh.model.ScriptConfig.ShellType
+                ?: com.lhstack.ssh.model.ScriptConfig.ShellType.DEFAULT
+        }
         
         // 服务器选择变化监听
         serverCheckList.setCheckBoxListListener { idx, selected ->
@@ -366,45 +405,43 @@ class MultiFileUploadDialog(
             add(JBScrollPane(serverCheckList), BorderLayout.CENTER)
         }
         
-        // 脚本配置面板
-        val scriptPanel = JPanel(BorderLayout(0, 5)).apply {
-            add(JBLabel("服务器脚本配置（点击服务器查看）:"), BorderLayout.NORTH)
-            add(scriptCardPanel, BorderLayout.CENTER)
-        }
-        
-        // 服务器和脚本水平分割
+        // 服务器选择 + 服务器脚本配置（左右分割，高度固定）
         val serverScriptSplit = JBSplitter(false).apply {
             firstComponent = serverPanel
-            secondComponent = scriptPanel
+            secondComponent = CollapsibleSection("服务器脚本配置（点击服务器查看）", scriptCardPanel)
             proportion = 0.4f
             dividerWidth = 5
+            preferredSize = Dimension(400, SERVER_SECTION_HEIGHT)
         }
-        
-        // 临时脚本Tab
+
+        // 临时脚本Tab：Tab 内直接纵向堆叠，滚动交给整个配置面板
+        listOf(
+            tempPreScriptEditor, tempLocalPreScriptEditor,
+            tempPostScriptEditor, tempLocalPostScriptEditor
+        ).forEach { it.preferredSize = Dimension(400, SCRIPT_EDITOR_HEIGHT) }
+
         val tempScriptTabs = JBTabbedPane().apply {
-            addTab("临时前置脚本", JPanel(BorderLayout(0, 3)).apply {
-                add(JBLabel("上传前执行:"), BorderLayout.NORTH)
-                add(tempPreScriptEditor.apply { preferredSize = Dimension(400, 100) }, BorderLayout.CENTER)
-            })
-            addTab("临时后置脚本", JPanel(BorderLayout(0, 3)).apply {
-                add(JBLabel("上传后执行:"), BorderLayout.NORTH)
-                add(tempPostScriptEditor.apply { preferredSize = Dimension(400, 100) }, BorderLayout.CENTER)
-            })
-            minimumSize = Dimension(100, 100)
+            addTab("前置脚本", verticalStack(
+                CollapsibleSection("临时远程前置脚本（上传前在服务器执行）", tempPreScriptEditor),
+                CollapsibleSection(
+                    "临时本地前置脚本（上传前在本机执行）",
+                    tempLocalPreScriptEditor,
+                    trailing = tempLocalPreShellCombo
+                )
+            ))
+            addTab("后置脚本", verticalStack(
+                CollapsibleSection("临时远程后置脚本（上传后在服务器执行）", tempPostScriptEditor),
+                CollapsibleSection(
+                    "临时本地后置脚本（上传后在本机执行）",
+                    tempLocalPostScriptEditor,
+                    trailing = tempLocalPostShellCombo
+                )
+            ))
         }
-        
-        // 上下分割：服务器选择 / 临时脚本
-        val mainSplit = JBSplitter(true).apply {
-            firstComponent = serverScriptSplit
-            secondComponent = tempScriptTabs
-            proportion = 0.55f
-            dividerWidth = 5
-        }
-        
-        return JPanel(BorderLayout(0, 10)).apply {
+
+        // 整个文件配置区共用一个纵向滚动条，内容未溢出时不显示
+        return verticalScrollPane(fileInfoPanel, serverScriptSplit, tempScriptTabs).apply {
             border = JBUI.Borders.empty(5)
-            add(fileInfoPanel, BorderLayout.NORTH)
-            add(mainSplit, BorderLayout.CENTER)
         }
     }
     
@@ -435,6 +472,11 @@ class MultiFileUploadDialog(
                 minWidth = 40
             }
             columnModel.getColumn(1).preferredWidth = 120
+            columnModel.getColumn(2).apply {
+                preferredWidth = 60
+                maxWidth = 60
+                minWidth = 60
+            }
             autoResizeMode = JTable.AUTO_RESIZE_LAST_COLUMN
         }
     }
@@ -488,7 +530,12 @@ class MultiFileUploadDialog(
                     preScripts = preScripts,
                     postScripts = postScripts,
                     tempPreScript = fileConfig.tempPreScript,
-                    tempPostScript = fileConfig.tempPostScript
+                    tempPostScript = fileConfig.tempPostScript,
+                    tempLocalPreScript    = fileConfig.tempLocalPreScript,
+                    tempLocalPreShellType = fileConfig.tempLocalPreShellType,
+                    tempLocalPostScript    = fileConfig.tempLocalPostScript,
+                    tempLocalPostShellType = fileConfig.tempLocalPostShellType,
+                    localWorkDir = project.basePath
                 ))
             }
         }
@@ -542,7 +589,11 @@ data class FileUploadConfig(
     val selectedServerIds: MutableSet<String> = mutableSetOf(),
     val serverScriptSelections: MutableMap<String, ServerScriptConfig> = mutableMapOf(),
     var tempPreScript: String = "",
-    var tempPostScript: String = ""
+    var tempPostScript: String = "",
+    var tempLocalPreScript: String = "",
+    var tempLocalPreShellType: com.lhstack.ssh.model.ScriptConfig.ShellType = com.lhstack.ssh.model.ScriptConfig.ShellType.DEFAULT,
+    var tempLocalPostScript: String = "",
+    var tempLocalPostShellType: com.lhstack.ssh.model.ScriptConfig.ShellType = com.lhstack.ssh.model.ScriptConfig.ShellType.DEFAULT
 )
 
 /**
@@ -562,7 +613,7 @@ data class ScriptSelection(val script: ScriptConfig, var selected: Boolean)
  * 脚本选择表格模型
  */
 class ScriptSelectionTableModel(private val scripts: MutableList<ScriptSelection>) : AbstractTableModel() {
-    private val columns = arrayOf("选择", "名称", "内容预览")
+    private val columns = arrayOf("选择", "名称", "位置", "内容预览")
 
     override fun getRowCount() = scripts.size
     override fun getColumnCount() = columns.size
@@ -579,7 +630,8 @@ class ScriptSelectionTableModel(private val scripts: MutableList<ScriptSelection
         return when (columnIndex) {
             0 -> item.selected
             1 -> item.script.name
-            2 -> item.script.content.replace("\n", " ").take(50)
+            2 -> if (item.script.scriptType.isLocal) "本机" else "服务器"
+            3 -> item.script.content.replace("\n", " ").take(50)
             else -> ""
         }
     }
