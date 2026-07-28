@@ -53,7 +53,9 @@ class MainView(
 
     private val terminalTabs = DockableTabPanel(parentDisposable)
     private val leftTabs = com.intellij.ui.components.JBTabbedPane(JTabbedPane.TOP)
-    private val splitPane = JBSplitter(true, DEFAULT_TOP_PANEL_PROPORTION)
+    private val splitPane = JBSplitter(true, DEFAULT_TOP_PANEL_PROPORTION).apply {
+        dividerWidth = DEFAULT_DIVIDER_WIDTH
+    }
     private val topPanelCollapseState = MainViewCollapseState(
         defaultExpandedProportion = DEFAULT_TOP_PANEL_PROPORTION,
         collapsedProportion = COLLAPSED_TOP_PANEL_PROPORTION
@@ -116,8 +118,8 @@ class MainView(
         // 切换到“批量执行”时隐藏 terminal，占满全屏；切掉时恢复
         leftTabs.addChangeListener {
             val isAnsible = leftTabs.selectedIndex == 3
+            // 隐藏 terminal 后 Splitter.doLayout 会自动隐藏 divider，无需改动 dividerWidth。
             terminalTabs.isVisible = !isAnsible
-            splitPane.dividerWidth = if (isAnsible || topPanelCollapseState.collapsed) 0 else DEFAULT_DIVIDER_WIDTH
             SwingUtilities.invokeLater {
                 splitPane.proportion = when {
                     isAnsible -> 1.0f
@@ -157,7 +159,6 @@ class MainView(
     private fun applyTopPanelState(targetProportion: Float) {
         topPanelContainer.isVisible = topPanelCollapseState.topPanelVisible
         topPanelContainer.minimumSize = Dimension(0, 0)
-        splitPane.dividerWidth = if (topPanelCollapseState.collapsed) 0 else DEFAULT_DIVIDER_WIDTH
         mainToolbar.updateActionsImmediately()
         topPanelToggleToolbar.updateActionsImmediately()
 

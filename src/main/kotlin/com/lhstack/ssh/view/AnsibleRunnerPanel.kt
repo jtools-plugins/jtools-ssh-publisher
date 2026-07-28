@@ -49,6 +49,10 @@ import javax.swing.tree.DefaultTreeModel
  */
 class AnsibleRunnerPanel(private val project: Project) : JPanel(BorderLayout()), AnsibleRunnerService.Listener {
 
+    companion object {
+        private const val SPLITTER_DIVIDER_WIDTH = 5
+    }
+
     // ── 当前选中分组 ──
     private var selectedGroupId: String? = null
 
@@ -130,7 +134,7 @@ class AnsibleRunnerPanel(private val project: Project) : JPanel(BorderLayout()),
 
         // 左侧：服务器树
         val leftPanel = JPanel(BorderLayout()).apply {
-            minimumSize = Dimension(80, 0)
+            minimumSize = Dimension(0, 0)
             add(JBLabel("  SSH 服务器").apply { border = BorderFactory.createEmptyBorder(4, 0, 4, 0) }, BorderLayout.NORTH)
             add(JBScrollPane(tree), BorderLayout.CENTER)
             add(JPanel(FlowLayout(FlowLayout.LEFT, 4, 2)).apply {
@@ -144,19 +148,18 @@ class AnsibleRunnerPanel(private val project: Project) : JPanel(BorderLayout()),
 
         // 右侧下：结果区
         val resultPanel = JPanel(BorderLayout()).apply {
+            minimumSize = Dimension(0, 0)
             add(JBLabel("  执行结果").apply { border = BorderFactory.createEmptyBorder(4, 0, 4, 0) }, BorderLayout.NORTH)
             add(JBScrollPane(resultTabs), BorderLayout.CENTER)
         }
 
-        val rightSplitter = JBSplitter(true, 0.45f).apply {
+        val rightSplitter = draggableSplitter(vertical = true, proportion = 0.45f).apply {
             firstComponent  = scriptPanel
             secondComponent = resultPanel
-            dividerWidth    = 5
         }
-        val mainSplitter = JBSplitter(false, 0.22f).apply {
+        val mainSplitter = draggableSplitter(vertical = false, proportion = 0.22f).apply {
             firstComponent  = leftPanel
             secondComponent = rightSplitter
-            dividerWidth    = 5
         }
         add(mainSplitter, BorderLayout.CENTER)
     }
@@ -199,14 +202,27 @@ class AnsibleRunnerPanel(private val project: Project) : JPanel(BorderLayout()),
             }, BorderLayout.EAST)
         }
         val livePanel = JPanel(BorderLayout()).apply {
+            minimumSize = Dimension(0, 0)
             add(liveHeader, BorderLayout.NORTH)
             add(scriptEditor, BorderLayout.CENTER)
         }
 
-        return JBSplitter(false, 0.35f).apply {
+        return draggableSplitter(vertical = false, proportion = 0.35f).apply {
             firstComponent  = savedPanel
             secondComponent = livePanel
-            dividerWidth    = 5
+        }
+    }
+
+    /**
+     * 构建可自由拖拽的分割面板。
+     *
+     * Splitter 默认 honorMinimumSize=true，会用子组件最小尺寸限制 divider 行程；
+     * 内嵌树、列表和编辑器的最小宽高较大，导致分割线几乎拖不动，这里显式关闭该限制。
+     */
+    private fun draggableSplitter(vertical: Boolean, proportion: Float): JBSplitter {
+        return JBSplitter(vertical, proportion).apply {
+            dividerWidth = SPLITTER_DIVIDER_WIDTH
+            setHonorComponentsMinimumSize(false)
         }
     }
 
@@ -214,6 +230,7 @@ class AnsibleRunnerPanel(private val project: Project) : JPanel(BorderLayout()),
     private fun buildSavedScriptsPanel(): JComponent {
         val panel = JPanel(BorderLayout(0, 2)).apply {
             border = BorderFactory.createEmptyBorder(0, 0, 0, 0)
+            minimumSize = Dimension(0, 0)
         }
 
         val header = JPanel(BorderLayout()).apply {
