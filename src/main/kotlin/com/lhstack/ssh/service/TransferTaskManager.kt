@@ -283,80 +283,141 @@ object TransferTaskManager {
     private fun executePreScripts(task: TransferTask, manager: SshConnectionManager) {
         for (script in task.preScripts) {
             if (task.status == TransferTask.TaskStatus.STOPPED) return
-            if (script.content.isNotEmpty()) {
-                val label = if (script.scriptType.isLocal) "本地前置脚本" else "前置脚本"
-                updateTask(task) { message = "执行$label: ${script.name}"; addLog("执行$label: ${script.name}") }
-                try {
-                    val result = if (script.scriptType.isLocal) LocalScriptExecutor.execute(script, task.localWorkDir!!)
-                                 else manager.executeCommand(script.content)
-                    if (result.isNotBlank()) task.addLog(result)
-                } catch (e: Exception) {
-                    task.addLog("✗ 脚本执行失败: ${e.message}")
-                }
+            if (script.content.isEmpty()) continue
+
+            val label = if (script.scriptType.isLocal) "本地前置脚本" else "前置脚本"
+            updateTask(task) {
+                message = "执行$label: ${script.name}"
+                addLog("执行$label: ${script.name}")
+            }
+            if (script.scriptType.isLocal) {
+                executeRequiredLocalPreScript(task, script, label)
+            } else {
+                executeRemoteScript(task, manager, script.content)
             }
         }
-        // 执行临时本地前置脚本
+
         if (task.tempLocalPreScript.isNotEmpty() && task.status != TransferTask.TaskStatus.STOPPED) {
-            updateTask(task) { message = "执行临时本地前置脚本"; addLog("执行临时本地前置脚本") }
-            try {
-                val result = LocalScriptExecutor.execute(
-                    com.lhstack.ssh.model.ScriptConfig(
-                        content = task.tempLocalPreScript,
-                        scriptType = com.lhstack.ssh.model.ScriptConfig.ScriptType.LOCAL_PRE,
-                        shellType = task.tempLocalPreShellType
-                    ),
-                    task.localWorkDir!!
-                )
-                if (result.isNotBlank()) task.addLog(result)
-            } catch (e: Exception) { task.addLog("✗ 本地脚本执行失败: ${e.message}") }
+            val label = "临时本地前置脚本"
+            updateTask(task) {
+                message = "执行$label"
+                addLog("执行$label")
+            }
+            executeRequiredLocalPreScript(
+                task,
+                ScriptConfig(
+                    content = task.tempLocalPreScript,
+                    scriptType = ScriptConfig.ScriptType.LOCAL_PRE,
+                    shellType = task.tempLocalPreShellType
+                ),
+                label
+            )
         }
-        // 执行临时远程前置脚本
+
         if (task.tempPreScript.isNotEmpty() && task.status != TransferTask.TaskStatus.STOPPED) {
-            updateTask(task) { message = "执行临时前置脚本"; addLog("执行临时前置脚本") }
-            try {
-                val result = manager.executeCommand(task.tempPreScript)
-                if (result.isNotBlank()) task.addLog(result)
-            } catch (e: Exception) { task.addLog("✗ 脚本执行失败: ${e.message}") }
+            updateTask(task) {
+                message = "执行临时前置脚本"
+                addLog("执行临时前置脚本")
+            }
+            executeRemoteScript(task, manager, task.tempPreScript)
         }
     }
 
     private fun executePostScripts(task: TransferTask, manager: SshConnectionManager) {
         for (script in task.postScripts) {
             if (task.status == TransferTask.TaskStatus.STOPPED) return
-            if (script.content.isNotEmpty()) {
-                val label = if (script.scriptType.isLocal) "本地后置脚本" else "后置脚本"
-                updateTask(task) { message = "执行$label: ${script.name}"; addLog("执行$label: ${script.name}") }
-                try {
-                    val result = if (script.scriptType.isLocal) LocalScriptExecutor.execute(script, task.localWorkDir!!)
-                                 else manager.executeCommand(script.content)
-                    if (result.isNotBlank()) task.addLog(result)
-                } catch (e: Exception) {
-                    task.addLog("✗ 脚本执行失败: ${e.message}")
-                }
+            if (script.content.isEmpty()) continue
+
+            val label = if (script.scriptType.isLocal) "本地后置脚本" else "后置脚本"
+            updateTask(task) {
+                message = "执行$label: ${script.name}"
+                addLog("执行$label: ${script.name}")
+            }
+            if (script.scriptType.isLocal) {
+                executeOptionalLocalPostScript(task, script, label)
+            } else {
+                executeRemoteScript(task, manager, script.content)
             }
         }
-        // 执行临时远程后置脚本
+
         if (task.tempPostScript.isNotEmpty() && task.status != TransferTask.TaskStatus.STOPPED) {
-            updateTask(task) { message = "执行临时后置脚本"; addLog("执行临时后置脚本") }
-            try {
-                val result = manager.executeCommand(task.tempPostScript)
-                if (result.isNotBlank()) task.addLog(result)
-            } catch (e: Exception) { task.addLog("✗ 脚本执行失败: ${e.message}") }
+            updateTask(task) {
+                message = "执行临时后置脚本"
+                addLog("执行临时后置脚本")
+            }
+            executeRemoteScript(task, manager, task.tempPostScript)
         }
-        // 执行临时本地后置脚本
+
         if (task.tempLocalPostScript.isNotEmpty() && task.status != TransferTask.TaskStatus.STOPPED) {
-            updateTask(task) { message = "执行临时本地后置脚本"; addLog("执行临时本地后置脚本") }
-            try {
-                val result = LocalScriptExecutor.execute(
-                    com.lhstack.ssh.model.ScriptConfig(
-                        content = task.tempLocalPostScript,
-                        scriptType = com.lhstack.ssh.model.ScriptConfig.ScriptType.LOCAL_POST,
-                        shellType = task.tempLocalPostShellType
-                    ),
-                    task.localWorkDir!!
-                )
-                if (result.isNotBlank()) task.addLog(result)
-            } catch (e: Exception) { task.addLog("✗ 本地脚本执行失败: ${e.message}") }
+            val label = "临时本地后置脚本"
+            updateTask(task) {
+                message = "执行$label"
+                addLog("执行$label")
+            }
+            executeOptionalLocalPostScript(
+                task,
+                ScriptConfig(
+                    content = task.tempLocalPostScript,
+                    scriptType = ScriptConfig.ScriptType.LOCAL_POST,
+                    shellType = task.tempLocalPostShellType
+                ),
+                label
+            )
+        }
+    }
+
+    private fun executeRequiredLocalPreScript(task: TransferTask, script: ScriptConfig, label: String) {
+        val result = executeAndLogLocalScript(task, script)
+        if (!result.succeeded) {
+            throw IllegalStateException("$label 执行失败：${result.failureDescription}")
+        }
+    }
+
+    private fun executeOptionalLocalPostScript(task: TransferTask, script: ScriptConfig, label: String) {
+        try {
+            val result = executeAndLogLocalScript(task, script)
+            if (!result.succeeded) {
+                updateTask(task) { addLog("✗ $label 执行失败：${result.failureDescription}") }
+            }
+        } catch (error: Exception) {
+            updateTask(task) { addLog("✗ $label 执行失败：${error.message}") }
+        }
+    }
+
+    private fun executeAndLogLocalScript(
+        task: TransferTask,
+        script: ScriptConfig
+    ): LocalScriptExecutor.ExecutionResult {
+        val workDir = requireNotNull(task.localWorkDir) { "本地脚本工作目录未设置" }
+        updateTask(task) {
+            addLog("本地脚本输入 [Shell: ${script.shellType.label}] [工作目录: $workDir]:\n${script.content}")
+        }
+
+        val result = LocalScriptExecutor.execute(script, workDir)
+        updateTask(task) {
+            addLog(formatLocalScriptStream("stdout", result.stdout))
+            addLog(formatLocalScriptStream("stderr", result.stderr))
+            addLog("本地脚本退出码: ${result.exitCode}${if (result.timedOut) "（超时终止）" else ""}")
+        }
+        return result
+    }
+
+    private fun formatLocalScriptStream(name: String, content: String): String {
+        return if (content.isEmpty()) {
+            "本地脚本 $name: <无输出>"
+        } else {
+            "本地脚本 $name:\n$content"
+        }
+    }
+
+    private fun executeRemoteScript(task: TransferTask, manager: SshConnectionManager, content: String) {
+        try {
+            val result = manager.executeCommand(content)
+            if (result.isNotBlank()) {
+                updateTask(task) { addLog(result) }
+            }
+        } catch (error: Exception) {
+            updateTask(task) { addLog("✗ 脚本执行失败: ${error.message}") }
         }
     }
 

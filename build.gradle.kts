@@ -30,7 +30,7 @@ dependencies {
     implementation("org.apache.sshd:sshd-sftp:2.15.0")
     implementation("org.xerial:sqlite-jdbc:3.45.1.0")
 //    implementation(files("/Users/lhstack/.jtools/sdk/sdk.jar"))
-    implementation(files("/Users/lhstack/.jtools/sdk/sdk.jar"))
+    implementation(files("C:/Users/lhstack/.jtools/sdk/sdk.jar"))
     testImplementation("org.jetbrains.kotlin:kotlin-test")
 }
 
