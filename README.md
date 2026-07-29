@@ -285,6 +285,8 @@ build/distributions/JTools-SSH-Publisher-*.zip
 - 修复：切换到批量执行 Tab 时把分割线宽度设为 0 触发 `IllegalArgumentException` 导致面板加载失败的问题
 - 修复：批量执行面板三条分割线因子组件最小尺寸限制几乎无法拖动的问题
 - 修复：工作目录不可用时显式报错，不再静默回退到 IDE 进程目录
+- 修复：所有本地 Shell（CMD、PowerShell、Bash、Zsh、sh 及系统默认 Shell）执行后，传输日志统一记录脚本输入、Shell 类型、工作目录、`stdout`、`stderr`、退出码和超时状态；无输出时也会明确标记，避免 Windows CMD 执行 `git status` 等命令后日志为空
+- 修复：任一本地前置脚本返回非零退出码、执行超时或发生执行异常时，立即终止后续前置脚本和上传操作，并将传输任务标记为失败
 
 ### v1.2.6
 - 修复：SSH 配置与跳板机勾选「显示原文」后，密码和私钥密码无法通过 `Ctrl/Cmd + C` 快捷键复制的问题
