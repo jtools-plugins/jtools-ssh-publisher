@@ -33,6 +33,7 @@ import java.awt.FlowLayout
 import java.awt.Point
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import java.awt.dnd.DragSource
 import javax.swing.*
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeModel
@@ -70,9 +71,10 @@ class AnsibleRunnerPanel(private val project: Project) : JPanel(BorderLayout()),
     private val shellFileType: LanguageFileType by lazy {
         FileTypeManager.getInstance().getFileTypeByExtension("sh") as? LanguageFileType ?: PlainTextFileType.INSTANCE
     }
-    private val scriptEditor = MultiLanguageTextField(shellFileType, project, "#!/bin/bash\n", isLineNumbersShown = true).also {
-        Disposer.register(project, it)
-    }
+    private val scriptEditor =
+        MultiLanguageTextField(shellFileType, project, "#!/bin/bash\n", isLineNumbersShown = true).also {
+            Disposer.register(project, it)
+        }
 
     // ── 已保存脚本列表（支持多选） ──
     private val savedScriptsList = JList<AnsibleGroupScript>().apply {
@@ -95,18 +97,58 @@ class AnsibleRunnerPanel(private val project: Project) : JPanel(BorderLayout()),
         refreshTree()
 
         tree.addMouseListener(object : MouseAdapter() {
-            override fun mouseClicked(e: MouseEvent) {
-                if (e.button == MouseEvent.BUTTON1) {
-                    val path = tree.getPathForLocation(e.x, e.y) ?: return
-                    val node = path.lastPathComponent as? DefaultMutableTreeNode ?: return
-                    when (val obj = node.userObject) {
-                        is CheckableConfig -> { obj.checked = !obj.checked; treeModel.nodeChanged(node) }
-                        is CheckableGroup  -> { selectedGroupId = obj.group.id; refreshSavedScripts() }
-                    }
+            private var pressedPath: javax.swing.tree.TreePath? = null
+            private var pressedPoint: Point? = null
+
+            override fun mousePressed(e: MouseEvent) {
+                if (e.isPopupTrigger) {
+                    clearPrimaryPress()
+                    handlePopup(e)
+                    return
+                }
+                if (SwingUtilities.isLeftMouseButton(e)) {
+                    pressedPath = tree.getPathForLocation(e.x, e.y)
+                    pressedPoint = e.point
                 }
             }
-            override fun mousePressed(e: MouseEvent)  = handlePopup(e)
-            override fun mouseReleased(e: MouseEvent) = handlePopup(e)
+
+            override fun mouseReleased(e: MouseEvent) {
+                if (e.isPopupTrigger) {
+                    clearPrimaryPress()
+                    handlePopup(e)
+                    return
+                }
+                if (!SwingUtilities.isLeftMouseButton(e)) return
+
+                val releasePath = tree.getPathForLocation(e.x, e.y)
+                val pressPoint = pressedPoint
+                val isClick = pressedPath == releasePath && pressPoint != null &&
+                        pressPoint.distance(e.point) <= DragSource.getDragThreshold()
+                clearPrimaryPress()
+                if (isClick && releasePath != null) {
+                    handlePrimaryAction(releasePath)
+                }
+            }
+
+            private fun handlePrimaryAction(path: javax.swing.tree.TreePath) {
+                val node = path.lastPathComponent as? DefaultMutableTreeNode ?: return
+                tree.selectionPath = path
+                when (val obj = node.userObject) {
+                    is CheckableConfig -> {
+                        obj.checked = !obj.checked
+                        treeModel.nodeChanged(node)
+                        showScriptsForGroup(obj.config.groupId)
+                    }
+
+                    is CheckableGroup -> showScriptsForGroup(obj.group.id)
+                }
+            }
+
+            private fun clearPrimaryPress() {
+                pressedPath = null
+                pressedPoint = null
+            }
+
             private fun handlePopup(e: MouseEvent) {
                 if (!e.isPopupTrigger) return
                 val path = tree.getPathForLocation(e.x, e.y) ?: return
@@ -328,10 +370,19 @@ class AnsibleRunnerPanel(private val project: Project) : JPanel(BorderLayout()),
         refreshSavedScripts()
     }
 
+    private fun showScriptsForGroup(groupId: String) {
+        selectedGroupId = groupId
+        refreshSavedScripts()
+    }
+
     private fun refreshSavedScripts() {
+        val selectedScriptIds = savedScriptsList.selectedValuesList.mapTo(mutableSetOf()) { it.id }
         val scripts = selectedGroupId?.let { SshConfigService.getAnsibleScriptsByGroup(it) } ?: emptyList()
         val model = DefaultListModel<AnsibleGroupScript>().also { m -> scripts.forEach { m.addElement(it) } }
         savedScriptsList.model = model
+        savedScriptsList.selectedIndices = scripts.mapIndexedNotNull { index, script ->
+            index.takeIf { script.id in selectedScriptIds }
+        }.toIntArray()
     }
 
     // ── 上移/下移已保存脚本 ──

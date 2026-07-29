@@ -28,6 +28,7 @@ import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.ui.JBUI
 import com.lhstack.ssh.PluginIcons
 import com.lhstack.ssh.component.CollapsibleSection
+import com.lhstack.ssh.component.ImmediateBooleanTable
 import com.lhstack.ssh.component.MultiLanguageTextField
 import com.lhstack.ssh.component.SCRIPT_EDITOR_HEIGHT
 import com.lhstack.ssh.component.verticalScrollPane
@@ -449,8 +450,8 @@ class UploadTemplateDialog(
     // 脚本选择表格
     private val preScriptsModel = TemplateScriptTableModel()
     private val postScriptsModel = TemplateScriptTableModel()
-    private val preScriptsTable = JBTable(preScriptsModel)
-    private val postScriptsTable = JBTable(postScriptsModel)
+    private val preScriptsTable = ImmediateBooleanTable(preScriptsModel)
+    private val postScriptsTable = ImmediateBooleanTable(postScriptsModel)
 
     // 临时脚本编辑器
     private lateinit var tempPreScriptEditor: MultiLanguageTextField

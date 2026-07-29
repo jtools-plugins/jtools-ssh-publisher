@@ -19,6 +19,7 @@ import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
 import com.lhstack.ssh.PluginIcons
 import com.lhstack.ssh.component.CollapsibleSection
+import com.lhstack.ssh.component.ImmediateBooleanTable
 import com.lhstack.ssh.component.MultiLanguageTextField
 import com.lhstack.ssh.component.SCRIPT_EDITOR_HEIGHT
 import com.lhstack.ssh.component.verticalScrollPane
@@ -48,8 +49,8 @@ class UploadDialog(
 
     private val preScriptsModel = UploadScriptTableModel()
     private val postScriptsModel = UploadScriptTableModel()
-    private val preScriptsTable = JBTable(preScriptsModel)
-    private val postScriptsTable = JBTable(postScriptsModel)
+    private val preScriptsTable = ImmediateBooleanTable(preScriptsModel)
+    private val postScriptsTable = ImmediateBooleanTable(postScriptsModel)
 
     private lateinit var tempPreScriptEditor: MultiLanguageTextField
     private lateinit var tempPostScriptEditor: MultiLanguageTextField

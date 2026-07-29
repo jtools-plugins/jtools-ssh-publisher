@@ -22,6 +22,7 @@ import com.intellij.ui.table.JBTable
 import com.intellij.util.ui.JBUI
 import com.lhstack.ssh.PluginIcons
 import com.lhstack.ssh.component.CollapsibleSection
+import com.lhstack.ssh.component.ImmediateBooleanTable
 import com.lhstack.ssh.component.MultiLanguageTextField
 import com.lhstack.ssh.component.SCRIPT_EDITOR_HEIGHT
 import com.lhstack.ssh.component.SERVER_SECTION_HEIGHT
@@ -462,7 +463,7 @@ class MultiFileUploadDialog(
     }
 
     private fun createScriptTable(model: ScriptSelectionTableModel): JBTable {
-        return JBTable(model).apply {
+        return ImmediateBooleanTable(model).apply {
             setShowGrid(false)
             tableHeader.reorderingAllowed = false
             rowHeight = 24
