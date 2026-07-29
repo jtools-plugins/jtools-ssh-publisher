@@ -107,6 +107,7 @@
         <li>Configure local file, server, remote path / 配置本地文件、服务器、远程路径</li>
         <li>Custom remote filename / 自定义远程文件名</li>
         <li><b>Select saved remote/local scripts or write temp scripts / 选择已保存的远程、本地脚本或临时脚本</b></li>
+        <li><b>Saved-script Checkbox toggles reliably with one click / 已保存脚本 Checkbox 单击即可可靠切换</b></li>
         <li><b>Local scripts run with working directory fixed to the current project root / 本地脚本工作目录固定为当前项目根目录</b></li>
         <li><b>Double-click to execute / 双击执行</b></li>
         <li><b>Multi-select batch execution / 多选批量执行</b></li>
@@ -119,6 +120,7 @@
         <li><b>Run scripts on multiple servers concurrently by group / 按分组勾选多台服务器并发执行脚本</b></li>
         <li><b>Independent result tab per server / 每台服务器独立结果 Tab</b></li>
         <li><b>Group-level saved scripts with reorder / 分组级已保存脚本，支持上下排序</b></li>
+        <li><b>Click a group or any server to show scripts of that group / 点击分组或其下任意服务器均回显所属分组脚本</b></li>
         <li><b>Multi-select saved scripts run in order / 多选已保存脚本按顺序执行</b></li>
         <li><b>Live script editor with shell highlighting / 实时脚本编辑器带 Shell 语法高亮</b></li>
         <li><b>Live script runs before or after saved scripts / 实时脚本可选在已保存脚本之前或之后执行</b></li>
@@ -155,6 +157,8 @@
         <li>新增：脚本选择表格增加“位置”列，区分本机执行与服务器执行</li>
         <li>修复：切换到批量执行 Tab 时把分割线宽度设为 0 触发 IllegalArgumentException 导致面板加载失败的问题</li>
         <li>修复：批量执行面板三条分割线因子组件最小尺寸限制几乎无法拖动的问题</li>
+        <li>修复：编辑上传模板时，已保存脚本表格的 Checkbox 偶发需要连续点击多次才能切换；现改为鼠标按下即直接更新 Boolean 模型，并同步应用到 SSH 连接右键上传和批量上传的同类脚本选择表格</li>
+        <li>优化：批量执行页面点击分组或该分组下任意服务器时，都会查询并回显所属分组的已保存脚本；切换同组服务器时保留仍有效的脚本选择</li>
         <li>修复：工作目录不可用时显式报错，不再静默使用 IDE 进程目录</li>
     </ul>
 
