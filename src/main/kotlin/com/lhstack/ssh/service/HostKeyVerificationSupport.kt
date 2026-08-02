@@ -1,11 +1,13 @@
 package com.lhstack.ssh.service
 
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.ui.Messages
 import org.apache.sshd.client.keyverifier.ServerKeyVerifier
 import org.apache.sshd.client.session.ClientSession
 import org.apache.sshd.common.config.keys.KeyUtils
 import org.apache.sshd.common.digest.BuiltinDigests
+import java.awt.Component
 import java.io.File
 import java.net.SocketAddress
 import java.security.PublicKey
@@ -77,7 +79,10 @@ object KnownHostsStore {
  * - 已记录且指纹一致：直接接受。
  * - 已记录但指纹不一致：弹出高危警告，用户显式确认后更新并接受，否则拒绝。
  */
-class HostKeyVerifier : ServerKeyVerifier {
+class HostKeyVerifier(
+    private val dialogParent: Component? = null,
+    private val dialogModalityState: ModalityState? = null
+) : ServerKeyVerifier {
 
     @Volatile
     private var expectedHost: String = ""
@@ -158,17 +163,34 @@ class HostKeyVerifier : ServerKeyVerifier {
         var accepted = false
         val app = ApplicationManager.getApplication()
         val ask = Runnable {
-            val result = Messages.showYesNoDialog(
-                message,
-                title,
-                "信任",
-                "取消",
-                if (warning) Messages.getWarningIcon() else Messages.getQuestionIcon()
-            )
+            val icon = if (warning) Messages.getWarningIcon() else Messages.getQuestionIcon()
+            val result = if (dialogParent != null) {
+                Messages.showDialog(
+                    dialogParent,
+                    message,
+                    title,
+                    arrayOf("信任", "取消"),
+                    0,
+                    icon
+                )
+            } else {
+                Messages.showYesNoDialog(
+                    message,
+                    title,
+                    "信任",
+                    "取消",
+                    icon
+                )
+            }
             accepted = result == Messages.YES
         }
         if (app != null) {
-            app.invokeAndWait(ask)
+            val modalityState = dialogModalityState
+            if (modalityState != null) {
+                app.invokeAndWait(ask, modalityState)
+            } else {
+                app.invokeAndWait(ask)
+            }
         } else {
             ask.run()
         }

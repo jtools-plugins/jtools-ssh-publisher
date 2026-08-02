@@ -1,5 +1,6 @@
 package com.lhstack.ssh.service
 
+import com.intellij.openapi.application.ModalityState
 import com.lhstack.ssh.model.SshConfig
 import org.apache.sshd.client.SshClient
 import org.apache.sshd.client.channel.ChannelShell
@@ -8,6 +9,7 @@ import org.apache.sshd.client.session.forward.ExplicitPortForwardingTracker
 import org.apache.sshd.sftp.client.SftpClient
 import org.apache.sshd.sftp.client.SftpClientFactory
 import org.apache.sshd.common.util.net.SshdSocketAddress
+import java.awt.Component
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -17,10 +19,13 @@ import java.util.concurrent.TimeUnit
 /**
  * SSH连接管理器
  */
-class SshConnectionManager {
+class SshConnectionManager(
+    hostKeyDialogParent: Component? = null,
+    hostKeyDialogModalityState: ModalityState? = null
+) {
 
     // 主机密钥校验器：基于本机 known_hosts 记录 + 首次指纹确认，防止中间人攻击
-    private val hostKeyVerifier = HostKeyVerifier()
+    private val hostKeyVerifier = HostKeyVerifier(hostKeyDialogParent, hostKeyDialogModalityState)
     private val client: SshClient = SshClient.setUpDefaultClient().apply {
         serverKeyVerifier = hostKeyVerifier
         start()
