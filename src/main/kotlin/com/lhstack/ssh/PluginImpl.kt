@@ -50,5 +50,5 @@ class PluginImpl : IPlugin {
 
     override fun pluginDesc(): String = "IntelliJ IDEA SSH 客户端插件，集成终端、SFTP 文件浏览器、批量上传、上传模板、批量执行和传输管理，支持跳板链、远程文件同步、系统监控，以及拖拽上传/移动、导入覆盖、删除等高风险操作确认。上传支持前置/后置脚本，远程脚本经 SSH 在服务器执行，本地前置/后置脚本在本机执行，工作目录固定为当前项目根目录（project.basePath），脚本内相对路径均以项目根目录为基准；右键上传、批量上传、模板单次执行与模板批量执行四个入口行为一致。脚本选择 Checkbox 单击即可切换；批量执行点击分组或其下服务器时会回显所属分组脚本。"
 
-    override fun pluginVersion(): String = "1.1.7"
+    override fun pluginVersion(): String = "1.1.8"
 }

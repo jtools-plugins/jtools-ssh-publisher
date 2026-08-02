@@ -45,6 +45,32 @@ class JumpHostSupportTest {
     }
 
     @Test
+    fun existing_ssh_connection_is_copied_as_independent_jump_host_snapshot() {
+        val source = SshConfig(
+            host = "jump.example.com",
+            port = 2202,
+            username = "deploy",
+            authType = SshConfig.AuthType.KEY,
+            password = "unused-password",
+            privateKey = "PRIVATE-KEY",
+            passphrase = "key-passphrase",
+            useLocalKey = true,
+            jumpHosts = listOf(JumpHostConfig(host = "upstream-jump"))
+        )
+
+        val snapshot = JumpHostSnapshotFactory.from(source)
+
+        assertEquals("jump.example.com", snapshot.host)
+        assertEquals(2202, snapshot.port)
+        assertEquals("deploy", snapshot.username)
+        assertEquals(SshConfig.AuthType.KEY, snapshot.authType)
+        assertEquals("unused-password", snapshot.password)
+        assertEquals("PRIVATE-KEY", snapshot.privateKey)
+        assertEquals("key-passphrase", snapshot.passphrase)
+        assertTrue(snapshot.useLocalKey)
+    }
+
+    @Test
     fun connection_chain_includes_jump_hosts_before_target() {
         val target = SshConfig(
             host = "target-host",
