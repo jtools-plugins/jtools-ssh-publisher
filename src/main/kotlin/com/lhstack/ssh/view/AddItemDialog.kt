@@ -7,6 +7,7 @@ import com.intellij.openapi.ui.Messages
 import com.intellij.ui.CollectionComboBoxModel
 import com.intellij.ui.ToolbarDecorator
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.fileTypes.LanguageFileType
 import com.intellij.openapi.fileTypes.PlainTextFileType
@@ -759,25 +760,31 @@ class AddItemDialog(
 
     private fun testConnection() {
         val config = buildConfig()
+        val dialogParent = contentPanel
+        val dialogModalityState = ModalityState.stateForComponent(dialogParent)
         if (config.name.isEmpty() || config.host.isEmpty()) {
-            Messages.showErrorDialog(project, "请填写名称和主机地址", "错误")
+            Messages.showErrorDialog(dialogParent, "请填写名称和主机地址", "错误")
             return
         }
 
         Thread {
-            val manager = SshConnectionManager()
+            val manager = SshConnectionManager(dialogParent, dialogModalityState)
             try {
                 val success = manager.connect(config)
                 SwingUtilities.invokeLater {
                     if (success) {
-                        Messages.showInfoMessage(project, "连接成功!", "测试连接")
+                        Messages.showInfoMessage(dialogParent, "连接成功!", "测试连接")
                     } else {
-                        Messages.showErrorDialog(project, manager.lastErrorMessage ?: "连接失败，请检查配置", "测试连接")
+                        Messages.showErrorDialog(
+                            dialogParent,
+                            manager.lastErrorMessage ?: "连接失败，请检查配置",
+                            "测试连接"
+                        )
                     }
                 }
             } catch (e: Exception) {
                 SwingUtilities.invokeLater {
-                    Messages.showErrorDialog(project, "连接失败: ${e.message}", "测试连接")
+                    Messages.showErrorDialog(dialogParent, "连接失败: ${e.message}", "测试连接")
                 }
             } finally {
                 manager.close()
