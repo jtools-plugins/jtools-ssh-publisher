@@ -28,6 +28,7 @@ import com.lhstack.ssh.model.JumpHostConfig
 import com.lhstack.ssh.model.ScriptConfig
 import com.lhstack.ssh.model.SshGroup
 import com.lhstack.ssh.model.SshConfig
+import com.lhstack.ssh.service.JumpHostSnapshotFactory
 import com.lhstack.ssh.service.LocalShellDetector
 import com.lhstack.ssh.service.SshConfigService
 import com.lhstack.ssh.service.SshConnectionManager
@@ -671,7 +672,7 @@ class AddItemDialog(
     }
 
     private fun addJumpHost() {
-        val dialog = JumpHostEditDialog(project, null)
+        val dialog = JumpHostEditDialog(project, null, existingConfig?.id)
         if (dialog.showAndGet()) {
             dialog.getJumpHost()?.let {
                 jumpHosts.add(it)
@@ -683,7 +684,7 @@ class AddItemDialog(
 
     private fun editJumpHost(index: Int) {
         if (index !in jumpHosts.indices) return
-        val dialog = JumpHostEditDialog(project, jumpHosts[index])
+        val dialog = JumpHostEditDialog(project, jumpHosts[index], existingConfig?.id)
         if (dialog.showAndGet()) {
             dialog.getJumpHost()?.let {
                 jumpHosts[index] = it
@@ -854,9 +855,23 @@ private class JumpHostListCellRenderer : DefaultListCellRenderer() {
 
 private class JumpHostEditDialog(
     private val project: Project,
-    private val existingJumpHost: JumpHostConfig?
+    private val existingJumpHost: JumpHostConfig?,
+    excludedConfigId: String?
 ) : DialogWrapper(project, true) {
 
+    private enum class SourceMode {
+        MANUAL,
+        EXISTING_CONNECTION
+    }
+
+    private val availableConfigs = SshConfigService.getConfigs()
+        .filterNot { it.id == excludedConfigId }
+    private val groupNames = SshConfigService.getGroups().associate { it.id to it.name }
+    private val sourceModeCombo = ComboBox(arrayOf("手动配置", "已有 SSH 连接"))
+    private val existingConnectionCombo = ComboBox<SshConfig>().apply {
+        model = CollectionComboBoxModel(availableConfigs)
+        renderer = ExistingConnectionRenderer(groupNames)
+    }
     private val hostField = JBTextField(existingJumpHost?.host ?: "")
     private val portField = JSpinner(SpinnerNumberModel(existingJumpHost?.port ?: 22, 1, 65535, 1))
     private val usernameField = JBTextField(existingJumpHost?.username ?: "root")
@@ -866,7 +881,10 @@ private class JumpHostEditDialog(
     private val useLocalKeyCheckbox = JCheckBox("使用本地密钥 (~/.ssh/id_rsa)").apply {
         isSelected = existingJumpHost?.useLocalKey ?: false
     }
+    private var sourceMode = SourceMode.MANUAL
     private var currentAuthType = existingJumpHost?.authType ?: SshConfig.AuthType.PASSWORD
+    private lateinit var sourceContainer: JPanel
+    private lateinit var manualConfigPanel: JPanel
     private lateinit var authContainer: JPanel
 
     init {
@@ -877,68 +895,131 @@ private class JumpHostEditDialog(
     }
 
     override fun createCenterPanel(): JComponent {
-        return JPanel(GridBagLayout()).apply {
-            val gbc = GridBagConstraints().apply {
-                fill = GridBagConstraints.HORIZONTAL
-                insets = JBUI.insets(4)
-                anchor = GridBagConstraints.NORTHWEST
+        sourceContainer = JPanel(CardLayout())
+        manualConfigPanel = createManualConfigPanel()
+        sourceContainer.add(manualConfigPanel, SourceMode.MANUAL.name)
+        sourceContainer.add(createExistingConnectionPanel(), SourceMode.EXISTING_CONNECTION.name)
+
+        sourceModeCombo.addActionListener {
+            sourceMode = if (sourceModeCombo.selectedIndex == 0) {
+                SourceMode.MANUAL
+            } else {
+                SourceMode.EXISTING_CONNECTION
             }
+            updateSourcePanel()
+        }
 
-            gbc.gridx = 0
-            gbc.gridy = 0
-            gbc.weightx = 0.0
-            add(JBLabel("主机:"), gbc)
-            gbc.gridx = 1
-            gbc.weightx = 1.0
-            add(hostField, gbc)
-
+        return JPanel(GridBagLayout()).apply {
+            val gbc = formConstraints()
+            addFormRow(this, gbc, 0, "配置方式:", sourceModeCombo)
             gbc.gridx = 0
             gbc.gridy = 1
-            gbc.weightx = 0.0
-            add(JBLabel("端口:"), gbc)
-            gbc.gridx = 1
+            gbc.gridwidth = 2
             gbc.weightx = 1.0
-            add(portField, gbc)
+            gbc.weighty = 1.0
+            gbc.fill = GridBagConstraints.BOTH
+            gbc.insets = JBUI.emptyInsets()
+            add(sourceContainer, gbc)
 
-            gbc.gridx = 0
-            gbc.gridy = 2
-            gbc.weightx = 0.0
-            add(JBLabel("用户名:"), gbc)
-            gbc.gridx = 1
-            gbc.weightx = 1.0
-            add(usernameField, gbc)
+            preferredSize = Dimension(500, 350)
+            border = JBUI.Borders.empty(10)
+        }
+    }
+
+    private fun createManualConfigPanel(): JPanel {
+        return JPanel(GridBagLayout()).apply {
+            val gbc = formConstraints()
+            addFormRow(this, gbc, 0, "主机:", hostField)
+            addFormRow(this, gbc, 1, "端口:", portField)
+            addFormRow(this, gbc, 2, "用户名:", usernameField)
 
             gbc.gridx = 0
             gbc.gridy = 3
             gbc.gridwidth = 2
-            val authTypePanel = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0)).apply {
-                val buttonGroup = ButtonGroup()
-                val passwordRadio = JRadioButton("密码认证").apply {
-                    isSelected = currentAuthType == SshConfig.AuthType.PASSWORD
-                    addActionListener { switchAuthType(SshConfig.AuthType.PASSWORD) }
-                }
-                val keyRadio = JRadioButton("密钥认证").apply {
-                    isSelected = currentAuthType == SshConfig.AuthType.KEY
-                    addActionListener { switchAuthType(SshConfig.AuthType.KEY) }
-                }
-                buttonGroup.add(passwordRadio)
-                buttonGroup.add(keyRadio)
-                add(passwordRadio)
-                add(Box.createHorizontalStrut(20))
-                add(keyRadio)
-            }
-            add(authTypePanel, gbc)
+            gbc.weightx = 1.0
+            add(createAuthTypePanel(), gbc)
 
             gbc.gridy = 4
+            gbc.weighty = 1.0
+            gbc.fill = GridBagConstraints.BOTH
+            gbc.insets = JBUI.emptyInsets()
             authContainer = JPanel(BorderLayout()).apply {
                 border = JBUI.Borders.customLine(JBUI.CurrentTheme.CustomFrameDecorations.separatorForeground(), 1)
             }
             updateAuthPanel()
             add(authContainer, gbc)
-
-            preferredSize = Dimension(480, 320)
-            border = JBUI.Borders.empty(10)
         }
+    }
+
+    private fun createAuthTypePanel(): JComponent {
+        return JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 0, 0)).apply {
+            val buttonGroup = ButtonGroup()
+            val passwordRadio = JRadioButton("密码认证").apply {
+                isSelected = currentAuthType == SshConfig.AuthType.PASSWORD
+                addActionListener { switchAuthType(SshConfig.AuthType.PASSWORD) }
+            }
+            val keyRadio = JRadioButton("密钥认证").apply {
+                isSelected = currentAuthType == SshConfig.AuthType.KEY
+                addActionListener { switchAuthType(SshConfig.AuthType.KEY) }
+            }
+            buttonGroup.add(passwordRadio)
+            buttonGroup.add(keyRadio)
+            add(passwordRadio)
+            add(Box.createHorizontalStrut(20))
+            add(keyRadio)
+        }
+    }
+
+    private fun createExistingConnectionPanel(): JPanel {
+        return JPanel(GridBagLayout()).apply {
+            val gbc = formConstraints()
+            addFormRow(this, gbc, 0, "SSH 连接:", existingConnectionCombo)
+
+            gbc.gridx = 1
+            gbc.gridy = 1
+            gbc.weightx = 1.0
+            gbc.weighty = 1.0
+            gbc.fill = GridBagConstraints.BOTH
+            gbc.anchor = GridBagConstraints.NORTHWEST
+            add(
+                JBLabel("<html>保存后会复制该连接的地址和认证配置；<br>原连接后续变更不会影响当前跳板链。</html>"),
+                gbc
+            )
+        }
+    }
+
+    private fun formConstraints(): GridBagConstraints = GridBagConstraints().apply {
+        fill = GridBagConstraints.HORIZONTAL
+        insets = JBUI.insets(4)
+        anchor = GridBagConstraints.BASELINE_LEADING
+    }
+
+    private fun addFormRow(
+        panel: JPanel,
+        constraints: GridBagConstraints,
+        row: Int,
+        label: String,
+        component: JComponent
+    ) {
+        constraints.gridx = 0
+        constraints.gridy = row
+        constraints.gridwidth = 1
+        constraints.weightx = 0.0
+        constraints.weighty = 0.0
+        constraints.fill = GridBagConstraints.HORIZONTAL
+        constraints.anchor = GridBagConstraints.BASELINE_LEADING
+        panel.add(JBLabel(label).apply { preferredSize = Dimension(72, preferredSize.height) }, constraints)
+
+        constraints.gridx = 1
+        constraints.weightx = 1.0
+        constraints.anchor = GridBagConstraints.BASELINE_LEADING
+        panel.add(component, constraints)
+    }
+
+    private fun updateSourcePanel() {
+        (sourceContainer.layout as CardLayout).show(sourceContainer, sourceMode.name)
+        sourceContainer.revalidate()
+        sourceContainer.repaint()
     }
 
     private fun switchAuthType(authType: SshConfig.AuthType) {
@@ -948,25 +1029,18 @@ private class JumpHostEditDialog(
 
     private fun updateAuthPanel() {
         authContainer.removeAll()
-        authContainer.add(if (currentAuthType == SshConfig.AuthType.PASSWORD) createPasswordPanel() else createKeyPanel(), BorderLayout.CENTER)
+        authContainer.add(
+            if (currentAuthType == SshConfig.AuthType.PASSWORD) createPasswordPanel() else createKeyPanel(),
+            BorderLayout.CENTER
+        )
         authContainer.revalidate()
         authContainer.repaint()
     }
 
     private fun createPasswordPanel(): JComponent {
         return JPanel(GridBagLayout()).apply {
-            border = JBUI.Borders.empty(8)
-            val gbc = GridBagConstraints().apply {
-                fill = GridBagConstraints.HORIZONTAL
-                insets = JBUI.insets(4)
-            }
-            gbc.gridx = 0
-            gbc.gridy = 0
-            gbc.weightx = 0.0
-            add(JBLabel("密码:"), gbc)
-            gbc.gridx = 1
-            gbc.weightx = 1.0
-            add(passwordField, gbc)
+            val gbc = formConstraints()
+            addFormRow(this, gbc, 0, "密码:", passwordField)
             gbc.gridx = 2
             gbc.weightx = 0.0
             add(passwordField.createRevealCheckbox(), gbc)
@@ -975,12 +1049,7 @@ private class JumpHostEditDialog(
 
     private fun createKeyPanel(): JComponent {
         return JPanel(GridBagLayout()).apply {
-            border = JBUI.Borders.empty(8)
-            val gbc = GridBagConstraints().apply {
-                fill = GridBagConstraints.HORIZONTAL
-                insets = JBUI.insets(4)
-                anchor = GridBagConstraints.WEST
-            }
+            val gbc = formConstraints()
             gbc.gridx = 0
             gbc.gridy = 0
             gbc.gridwidth = 3
@@ -989,8 +1058,7 @@ private class JumpHostEditDialog(
             gbc.gridy = 1
             gbc.gridwidth = 1
             gbc.weightx = 0.0
-            add(JBLabel("私钥:"), gbc)
-            // 私钥区跨满输入列与尾列，避免被“显示原文”所在的尾列挤窄
+            add(JBLabel("私钥:").apply { preferredSize = Dimension(72, preferredSize.height) }, gbc)
             gbc.gridx = 1
             gbc.gridwidth = 2
             gbc.weightx = 1.0
@@ -1000,9 +1068,11 @@ private class JumpHostEditDialog(
             gbc.gridy = 2
             gbc.gridwidth = 1
             gbc.weightx = 0.0
-            add(JBLabel("私钥密码:"), gbc)
+            gbc.anchor = GridBagConstraints.BASELINE_LEADING
+            add(JBLabel("私钥密码:").apply { preferredSize = Dimension(72, preferredSize.height) }, gbc)
             gbc.gridx = 1
             gbc.weightx = 1.0
+            gbc.anchor = GridBagConstraints.BASELINE_LEADING
             add(passphraseField, gbc)
             gbc.gridx = 2
             gbc.weightx = 0.0
@@ -1012,11 +1082,14 @@ private class JumpHostEditDialog(
     }
 
     fun getJumpHost(): JumpHostConfig? {
+        if (sourceMode == SourceMode.EXISTING_CONNECTION) {
+            val selectedConfig = existingConnectionCombo.selectedItem as? SshConfig ?: return null
+            return JumpHostSnapshotFactory.from(selectedConfig)
+        }
+
         val host = hostField.text.trim()
         val username = usernameField.text.trim()
-        if (host.isEmpty() || username.isEmpty()) {
-            return null
-        }
+        if (host.isEmpty() || username.isEmpty()) return null
 
         return JumpHostConfig(
             host = host,
@@ -1031,6 +1104,15 @@ private class JumpHostEditDialog(
     }
 
     override fun doOKAction() {
+        if (sourceMode == SourceMode.EXISTING_CONNECTION) {
+            if (existingConnectionCombo.selectedItem !is SshConfig) {
+                Messages.showErrorDialog(project, "没有可选择的 SSH 连接", "错误")
+                return
+            }
+            super.doOKAction()
+            return
+        }
+
         if (hostField.text.trim().isEmpty()) {
             Messages.showErrorDialog(project, "请输入跳板机主机地址", "错误")
             return
@@ -1043,11 +1125,34 @@ private class JumpHostEditDialog(
             Messages.showErrorDialog(project, "请输入跳板机密码", "错误")
             return
         }
-        if (currentAuthType == SshConfig.AuthType.KEY && !useLocalKeyCheckbox.isSelected && privateKeyArea.text.trim().isEmpty()) {
+        if (currentAuthType == SshConfig.AuthType.KEY &&
+            !useLocalKeyCheckbox.isSelected &&
+            privateKeyArea.text.trim().isEmpty()
+        ) {
             Messages.showErrorDialog(project, "请输入跳板机私钥内容", "错误")
             return
         }
         super.doOKAction()
+    }
+
+    private class ExistingConnectionRenderer(
+        private val groupNames: Map<String, String>
+    ) : DefaultListCellRenderer() {
+        override fun getListCellRendererComponent(
+            list: JList<*>?,
+            value: Any?,
+            index: Int,
+            isSelected: Boolean,
+            cellHasFocus: Boolean
+        ): java.awt.Component {
+            super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
+            if (value is SshConfig) {
+                val groupName = groupNames[value.groupId] ?: "默认"
+                text = "$groupName / ${value.name} (${value.username}@${value.host}:${value.port})"
+                icon = PluginIcons.SshConnection
+            }
+            return this
+        }
     }
 }
 

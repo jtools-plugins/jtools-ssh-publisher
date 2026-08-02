@@ -46,6 +46,25 @@ object JumpHostCodec {
     }
 }
 
+object JumpHostSnapshotFactory {
+    /**
+     * 将已有 SSH 连接复制为独立的跳板机快照。
+     *
+     * 只复制连接本身的端点与认证参数，不复制该连接已有的跳板链；后续修改或删除
+     * 原 SSH 连接不会隐式改变已保存的跳板链。
+     */
+    fun from(config: SshConfig): JumpHostConfig = JumpHostConfig(
+        host = config.host,
+        port = config.port,
+        username = config.username,
+        authType = config.authType,
+        password = config.password,
+        privateKey = config.privateKey,
+        passphrase = config.passphrase,
+        useLocalKey = config.useLocalKey
+    )
+}
+
 object SshConnectionChainPlanner {
     private const val MAX_JUMP_HOSTS = 16
 
